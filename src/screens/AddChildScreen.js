@@ -18,6 +18,13 @@ const EMOJI_OPTIONS = [
   '🐻', '🌟', '🎀', '🦋', '🌈', '🎪', '🎨', '🎵', '🌸', '🍭',
 ];
 
+function formatBirthday(text) {
+  const digits = text.replace(/\D/g, '');
+  if (digits.length <= 2) return digits;
+  if (digits.length <= 4) return digits.slice(0, 2) + '/' + digits.slice(2);
+  return digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4, 8);
+}
+
 function parseBirthday(text) {
   const match = text.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
   if (!match) return null;
@@ -92,6 +99,7 @@ export default function AddChildScreen({ navigation }) {
         {/* Name */}
         <Text style={styles.label}>Child's Name</Text>
         <TextInput
+          testID="input-name"
           style={[styles.input, errors.name && styles.inputError]}
           placeholder="e.g. Nina"
           placeholderTextColor={COLORS.textLight}
@@ -103,24 +111,25 @@ export default function AddChildScreen({ navigation }) {
           autoCapitalize="words"
           returnKeyType="next"
         />
-        {errors.name && <Text style={styles.errorText}>{errors.name}</Text>}
+        {errors.name && <Text testID="error-name" style={styles.errorText}>{errors.name}</Text>}
 
         {/* Birthday */}
         <Text style={styles.label}>Birthday</Text>
         <TextInput
+          testID="input-birthday"
           style={[styles.input, errors.birthday && styles.inputError]}
           placeholder="MM/DD/YYYY"
           placeholderTextColor={COLORS.textLight}
           value={birthday}
           onChangeText={(t) => {
-            setBirthday(t);
+            setBirthday(formatBirthday(t));
             if (errors.birthday) setErrors((prev) => ({ ...prev, birthday: undefined }));
           }}
           keyboardType="number-pad"
           maxLength={10}
           returnKeyType="done"
         />
-        {errors.birthday && <Text style={styles.errorText}>{errors.birthday}</Text>}
+        {errors.birthday && <Text testID="error-birthday" style={styles.errorText}>{errors.birthday}</Text>}
 
         {/* Emoji Picker */}
         <Text style={styles.label}>Choose an Avatar</Text>
@@ -138,6 +147,7 @@ export default function AddChildScreen({ navigation }) {
 
         {/* Save Button */}
         <TouchableOpacity
+          testID="button-save"
           style={[styles.saveButton, saving && styles.saveButtonDisabled]}
           onPress={handleSave}
           disabled={saving}

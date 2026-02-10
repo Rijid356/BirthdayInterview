@@ -38,6 +38,7 @@ export default function HomeScreen({ navigation }) {
             Add your child's profile to start recording birthday interviews!
           </Text>
           <TouchableOpacity
+            testID="button-add-first-child"
             style={styles.button}
             onPress={() => navigation.navigate('AddChild')}
           >

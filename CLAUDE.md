@@ -1,99 +1,109 @@
-# Birthday Interview App
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Project Overview
-A React Native (Expo) mobile app for recording annual birthday interviews with children. Parents ask a set of questions each year, record a continuous video, and log text answers. Over the years, answers can be compared side-by-side to see how children grow and change.
+
+A React Native (Expo) mobile app for recording annual birthday interviews with children. Parents ask questions each year, record a continuous video, and log text answers. Answers can be compared across years to see how children grow.
+
+## Commands
+
+```bash
+# Development (Expo Go on device)
+npm start                    # Start Expo dev server, scan QR with Expo Go
+npm run android              # Launch on Android emulator/device
+npm run ios                  # Launch on iOS simulator/device
+npm run web                  # Start Expo web server
+
+# E2E Tests (Playwright against Expo web build)
+npm run test:e2e             # Run all E2E tests headless
+npm run test:e2e:headed      # Run with visible browser
+npx playwright test e2e/add-child-birthday.spec.js  # Run single test file
+npx playwright test -g "Valid date"                  # Run tests matching name
+```
+
+**Important**: This project uses **Expo Go** (managed workflow), not dev builds. There is no `npx expo prebuild` or native code. All testing on physical devices goes through the Expo Go app.
 
 ## Tech Stack
-- **Framework**: React Native with Expo SDK 52 (managed workflow)
-- **Navigation**: @react-navigation/native + native-stack
-- **Storage**: @react-native-async-storage/async-storage for structured data
+
+- **Expo SDK 54** (managed workflow), React Native 0.81, React 19
+- **Navigation**: @react-navigation/native v7 + native-stack
+- **Storage**: AsyncStorage (keys: `@birthday_interview_children`, `@birthday_interview_sessions`)
 - **Video**: expo-camera (CameraView) for recording, expo-av (Video) for playback
-- **File System**: expo-file-system for video storage in app's document directory
-- **Sharing/Backup**: expo-sharing for export functionality
+- **File System**: expo-file-system for video storage in `${documentDirectory}interview-videos/`
+- **E2E**: Playwright (Chromium) against Expo web build on port 19006
 
 ## Architecture
 
-### Screens
-1. **HomeScreen** - List of child profiles, add new child, link to settings
-2. **AddChildScreen** - Form: name, birthday (MM/DD/YYYY), emoji avatar picker
-3. **ChildProfileScreen** - Shows child info, interview history, "Start Interview" button, "Compare Years" button (if 2+ interviews)
-4. **InterviewScreen** - The core flow with 3 phases:
-   - **Intro**: Camera preview, instructions, "Start Recording" button
-   - **Recording**: Full-screen camera with question prompts overlaid at bottom. Prev/Next to cycle through questions. Stop recording when done.
-   - **Answer Entry**: After recording stops, cycle through questions again to type in text answers. "Save" when done.
-5. **InterviewReviewScreen** - View a saved interview: video player at top, Q&A cards grouped by category below
-6. **YearCompareScreen** - For a given child, show each question with a timeline of answers across all years. Filter by category.
-7. **SettingsScreen** - Export/import JSON data backup, app info
+### Screen Flow
+
+```
+HomeScreen ──→ AddChildScreen
+    │
+    ├──→ ChildProfileScreen ──→ InterviewScreen (3-phase flow)
+    │         │                       │
+    │         ├──→ InterviewReviewScreen (video + Q&A review)
+    │         └──→ YearCompareScreen (cross-year answer timeline)
+    │
+    └──→ SettingsScreen (export/import JSON backup)
+```
+
+### InterviewScreen Phases
+
+The most complex screen. Three sequential phases in a single screen component:
+1. **Intro** — Camera preview, instructions, "Start Recording" button
+2. **Recording** — Full-screen camera, question prompt overlay, Prev/Next navigation, Stop button. `CameraView.recordAsync()` runs continuously.
+3. **Answer Entry** — After recording stops, cycle through questions to type text answers. Save creates the interview record.
+
+### Data Flow Pattern
+
+All screens use the same pattern:
+- `useFocusEffect` → load data from AsyncStorage on screen focus
+- Local `useState` for screen state (no global state management)
+- Storage utility functions in `src/utils/storage.js` for all CRUD
+- Navigation params pass IDs between screens (e.g., `childId`, `interviewId`)
 
 ### Data Models
 
-**Child**
-```json
-{
-  "id": "unique_id",
-  "name": "Nina",
-  "birthday": "2020-02-14T00:00:00.000Z",
-  "emoji": "👧",
-  "createdAt": "ISO date"
-}
-```
+**Child**: `{ id, name, birthday (ISO), emoji, createdAt }`
+**Interview**: `{ id, childId, year, age, date, questions[], answers{}, videoUri, createdAt }`
 
-**Interview**
-```json
-{
-  "id": "unique_id",
-  "childId": "child_id",
-  "year": 2026,
-  "age": 6,
-  "date": "ISO date",
-  "questions": ["q1", "q2", ...],
-  "answers": { "q1": "Purple!", "q2": "Pizza" },
-  "videoUri": "file:///path/to/video.mp4",
-  "createdAt": "ISO date"
-}
-```
-
-### Storage Utilities (src/utils/storage.js)
-- `getChildren()` / `saveChild(child)` / `deleteChild(id)`
-- `getInterviews()` / `getInterviewsForChild(childId)` / `saveInterview(interview)` / `deleteInterview(id)`
-- `moveVideoToStorage(tempUri, filename)` - moves recorded video from cache to document directory
-- `exportAllData()` / `importData(data)` - JSON backup/restore (does not include video files)
-- Video directory: `${FileSystem.documentDirectory}interview-videos/`
+IDs: `Date.now().toString() + Math.random().toString(36).substr(2, 9)`
 
 ### Questions (src/data/questions.js)
-20 default questions in 6 categories:
-- **basics**: How old are you today?
-- **favorites**: Favorite color, food, animal, song, book, activity, movie/show
-- **people**: Best friend, favorite family activity
-- **dreams**: What to be when grown up, superpower, dream travel destination, want to learn
-- **reflections**: Best thing this year, funniest thing, proudest moment, what makes you happy
-- **fun**: One food forever, silliest thing
 
-Each question: `{ id: 'q1', text: '...', category: 'favorites' }`
-
-Categories: `{ favorites: { label: 'Favorites', emoji: '⭐' }, ... }`
-
-## Design Direction
-- Warm, celebratory color palette (primary: #FF6B8A pink, accent: #FFB347 gold)
-- Rounded cards with soft shadows
-- Child-friendly but parent-operated (not a kids' UI)
-- Recording screen: camera fills screen, question prompt overlays bottom in semi-transparent dark panel
-- Progress bar during recording and answer entry
+20 default questions in 6 categories (basics, favorites, people, dreams, reflections, fun). Each question: `{ id: 'q1', text: '...', category: 'favorites' }`. Categories have labels and emoji. Questions are not yet user-customizable.
 
 ## Key Implementation Notes
+
 - Use `CameraView` from expo-camera (not the deprecated `Camera` component)
 - Camera `mode="video"`, `facing="front"` by default with flip button
-- `recordAsync()` returns `{ uri }` when `stopRecording()` is called
 - Video playback uses `<Video>` from expo-av with `useNativeControls`
-- All IDs generated with `Date.now().toString() + Math.random().toString(36).substr(2, 9)`
+- Long-press on interview cards for delete actions with confirmation alerts
 - Year comparison sorts interviews chronologically (oldest first)
-- Long-press on cards for delete actions with confirmation alerts
-- Multi-child support from the start
+- Export/import is JSON only — video files are NOT included in backups
+- `testID` props on key form elements render as `data-testid` in web (used by Playwright)
+
+## E2E Testing
+
+Playwright tests run against the Expo web build (`react-native-web`). The web server auto-starts on port 19006 via the Playwright config.
+
+**Current test coverage**: `e2e/add-child-birthday.spec.js` — 9 tests for birthday input validation on AddChildScreen.
+
+**Known limitation**: `keyboardType="number-pad"` maps to `inputmode="numeric"` on web which does NOT restrict character input. On mobile, number-pad keyboards may not expose the `/` character needed for MM/DD/YYYY. The E2E tests validate web behavior; manual testing on device is needed for mobile keyboard behavior.
+
+## Design
+
+- Warm celebratory palette: primary #FF6B8A (pink), accent #FFB347 (gold)
+- Theme constants in `src/utils/theme.js` (COLORS and SIZES objects)
+- Rounded cards with soft shadows, child-friendly but parent-operated UI
+- Recording screen: camera fills screen, dark semi-transparent overlay for question prompts
 
 ## Future Enhancements (not in v1)
-- Cloud backup to Google Drive or Firebase
+
+- Cloud backup (Google Drive / Firebase)
 - Custom questions per child
-- Photo capture alongside video
+- Auto-formatting birthday input (slash insertion)
 - Edit answers after saving
 - Share interview summary as PDF/image
 - Birthday reminder notifications
