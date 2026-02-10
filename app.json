@@ -8,7 +8,9 @@
     "splash": {
       "backgroundColor": "#FF6B8A"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#FF6B8A"
@@ -36,7 +38,8 @@
           "photosPermission": "Allow Birthday Interview to save videos to your photo library.",
           "savePhotosPermission": "Allow Birthday Interview to save interview videos."
         }
-      ]
+      ],
+      "expo-asset"
     ]
   }
 }

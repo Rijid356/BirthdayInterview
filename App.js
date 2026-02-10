@@ -4,8 +4,14 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { COLORS } from './src/utils/theme';
 
-// Screens - Claude CLI will build these out
+// Screens
 import HomeScreen from './src/screens/HomeScreen';
+import AddChildScreen from './src/screens/AddChildScreen';
+import ChildProfileScreen from './src/screens/ChildProfileScreen';
+import InterviewScreen from './src/screens/InterviewScreen';
+import InterviewReviewScreen from './src/screens/InterviewReviewScreen';
+import YearCompareScreen from './src/screens/YearCompareScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -27,14 +33,36 @@ export default function App() {
           component={HomeScreen}
           options={{ title: '🎂 Birthday Interviews' }}
         />
-        {/* Add remaining screens here:
-          - AddChild
-          - ChildProfile
-          - Interview (headerShown: false, gestureEnabled: false)
-          - InterviewReview
-          - YearCompare
-          - Settings
-        */}
+        <Stack.Screen
+          name="AddChild"
+          component={AddChildScreen}
+          options={{ title: 'Add Child' }}
+        />
+        <Stack.Screen
+          name="ChildProfile"
+          component={ChildProfileScreen}
+          options={{ title: 'Profile' }}
+        />
+        <Stack.Screen
+          name="Interview"
+          component={InterviewScreen}
+          options={{ headerShown: false, gestureEnabled: false }}
+        />
+        <Stack.Screen
+          name="InterviewReview"
+          component={InterviewReviewScreen}
+          options={{ title: 'Interview Review' }}
+        />
+        <Stack.Screen
+          name="YearCompare"
+          component={YearCompareScreen}
+          options={{ title: 'Compare Years' }}
+        />
+        <Stack.Screen
+          name="Settings"
+          component={SettingsScreen}
+          options={{ title: 'Settings' }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );

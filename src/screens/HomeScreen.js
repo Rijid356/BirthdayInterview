@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useLayoutEffect } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SIZES } from '../utils/theme';
@@ -6,6 +6,21 @@ import { getChildren } from '../utils/storage';
 
 export default function HomeScreen({ navigation }) {
   const [children, setChildren] = useState([]);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <View style={{ flexDirection: 'row', gap: 12 }}>
+          <TouchableOpacity onPress={() => navigation.navigate('AddChild')}>
+            <Text style={{ fontSize: 24, color: COLORS.primary }}>+</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => navigation.navigate('Settings')}>
+            <Text style={{ fontSize: 20 }}>&#9881;</Text>
+          </TouchableOpacity>
+        </View>
+      ),
+    });
+  }, [navigation]);
 
   useFocusEffect(
     useCallback(() => {
