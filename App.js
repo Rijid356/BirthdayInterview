@@ -31,7 +31,7 @@ export default function App() {
         <Stack.Screen
           name="Home"
           component={HomeScreen}
-          options={{ title: '🎂 Birthday Interviews' }}
+          options={{ title: '🎂 Berfdayy' }}
         />
         <Stack.Screen
           name="AddChild"

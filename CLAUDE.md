@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-A React Native (Expo) mobile app for recording annual birthday interviews with children. Parents ask questions each year, record a continuous video, and log text answers. Answers can be compared across years to see how children grow.
+**Berfdayy** — A React Native (Expo) mobile app for recording annual birthday interviews with children. Parents ask questions each year while recording a continuous video. The video IS the interview — no text answer entry. Old interviews with text answers are still displayed for backward compatibility.
 
 ## Commands
 
@@ -40,7 +40,7 @@ npx playwright test -g "Valid date"                  # Run tests matching name
 ```
 HomeScreen ──→ AddChildScreen
     │
-    ├──→ ChildProfileScreen ──→ InterviewScreen (3-phase flow)
+    ├──→ ChildProfileScreen ──→ InterviewScreen (2-phase flow)
     │         │                       │
     │         ├──→ InterviewReviewScreen (video + Q&A review)
     │         └──→ YearCompareScreen (cross-year answer timeline)
@@ -50,10 +50,9 @@ HomeScreen ──→ AddChildScreen
 
 ### InterviewScreen Phases
 
-The most complex screen. Three sequential phases in a single screen component:
+Two sequential phases in a single screen component:
 1. **Intro** — Camera preview, instructions, "Start Recording" button
-2. **Recording** — Full-screen camera, question prompt overlay, Prev/Next navigation, Stop button. `CameraView.recordAsync()` runs continuously.
-3. **Answer Entry** — After recording stops, cycle through questions to type text answers. Save creates the interview record.
+2. **Recording** — Full-screen camera, question prompt overlay, Prev/Next navigation, Stop button. `CameraView.recordAsync()` runs continuously. When stopped, video is saved automatically and navigates to InterviewReview (no text answer entry).
 
 ### Data Flow Pattern
 
@@ -72,7 +71,7 @@ IDs: `Date.now().toString() + Math.random().toString(36).substr(2, 9)`
 
 ### Questions (src/data/questions.js)
 
-20 default questions in 6 categories (basics, favorites, people, dreams, reflections, fun). Each question: `{ id: 'q1', text: '...', category: 'favorites' }`. Categories have labels and emoji. Questions are not yet user-customizable.
+22 default questions in 6 categories (basics, favorites, people, dreams, reflections, fun). Each question: `{ id: 'q1', text: '...', category: 'favorites' }`. Categories have labels and emoji. Questions are not yet user-customizable.
 
 ## Key Implementation Notes
 

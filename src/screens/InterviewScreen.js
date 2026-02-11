@@ -2,17 +2,14 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
   SafeAreaView,
   Alert,
-  KeyboardAvoidingView,
-  Platform,
-  ScrollView,
+  ActivityIndicator,
   Animated,
 } from 'react-native';
-import { CameraView, useCameraPermissions } from 'expo-camera';
+import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
 import { COLORS, SIZES } from '../utils/theme';
 import {
   getChildren,
@@ -98,13 +95,12 @@ export default function InterviewScreen({ route, navigation }) {
   // Camera
   const cameraRef = useRef(null);
   const [permission, requestPermission] = useCameraPermissions();
+  const [micPermission, requestMicPermission] = useMicrophonePermissions();
 
   // State
-  const [phase, setPhase] = useState('intro'); // 'intro' | 'recording' | 'answers'
+  const [phase, setPhase] = useState('intro'); // 'intro' | 'recording'
   const [facing, setFacing] = useState('front');
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
-  const [answers, setAnswers] = useState({});
-  const [videoUri, setVideoUri] = useState(null);
   const [isRecording, setIsRecording] = useState(false);
   const [saving, setSaving] = useState(false);
 
@@ -127,6 +123,37 @@ export default function InterviewScreen({ route, navigation }) {
 
   // ─── Phase transitions ───
 
+  async function saveAndNavigate(tempVideoUri) {
+    setSaving(true);
+    try {
+      const filename = `interview_${childId}_${Date.now()}.mp4`;
+      const storedUri = await moveVideoToStorage(tempVideoUri, filename);
+
+      const children = await getChildren();
+      const child = children.find((c) => c.id === childId);
+      const age = child ? calculateAge(child.birthday) : null;
+
+      const interview = {
+        id: generateId(),
+        childId,
+        year: new Date().getFullYear(),
+        age,
+        date: new Date().toISOString(),
+        questions: questions.map((q) => q.id),
+        answers: {},
+        videoUri: storedUri,
+        createdAt: new Date().toISOString(),
+      };
+
+      await saveInterview(interview);
+      navigation.replace('InterviewReview', { interviewId: interview.id });
+    } catch (e) {
+      console.warn('Save error:', e);
+      Alert.alert('Save Error', 'Could not save the interview. Please try again.');
+      setSaving(false);
+    }
+  }
+
   async function startRecording() {
     if (!cameraRef.current) return;
     setPhase('recording');
@@ -137,7 +164,7 @@ export default function InterviewScreen({ route, navigation }) {
       const result = await cameraRef.current.recordAsync();
       // recordAsync resolves when stopRecording() is called
       if (result?.uri) {
-        setVideoUri(result.uri);
+        await saveAndNavigate(result.uri);
       }
     } catch (e) {
       console.warn('Recording error:', e);
@@ -151,57 +178,12 @@ export default function InterviewScreen({ route, navigation }) {
     if (!cameraRef.current) return;
     cameraRef.current.stopRecording();
     setIsRecording(false);
-    setCurrentQuestionIndex(0);
-    setPhase('answers');
-  }
-
-  // ─── Save interview ───
-
-  async function handleSave() {
     setSaving(true);
-    try {
-      // Move video to permanent storage
-      const filename = `interview_${childId}_${Date.now()}.mp4`;
-      const storedUri = await moveVideoToStorage(videoUri, filename);
-
-      // Calculate age from child's birthday
-      const children = await getChildren();
-      const child = children.find((c) => c.id === childId);
-      const age = child ? calculateAge(child.birthday) : null;
-
-      // Build the answer map (only include answered questions)
-      const answerMap = {};
-      questions.forEach((q) => {
-        if (answers[q.id] !== undefined && answers[q.id] !== '') {
-          answerMap[q.id] = answers[q.id];
-        }
-      });
-
-      const interview = {
-        id: generateId(),
-        childId,
-        year: new Date().getFullYear(),
-        age,
-        date: new Date().toISOString(),
-        questions: questions.map((q) => q.id),
-        answers: answerMap,
-        videoUri: storedUri,
-        createdAt: new Date().toISOString(),
-      };
-
-      await saveInterview(interview);
-
-      navigation.replace('InterviewReview', { interviewId: interview.id });
-    } catch (e) {
-      console.warn('Save error:', e);
-      Alert.alert('Save Error', 'Could not save the interview. Please try again.');
-      setSaving(false);
-    }
   }
 
   // ─── Permission handling ───
 
-  if (!permission) {
+  if (!permission || !micPermission) {
     // Permissions still loading
     return (
       <SafeAreaView style={styles.container}>
@@ -212,16 +194,24 @@ export default function InterviewScreen({ route, navigation }) {
     );
   }
 
-  if (!permission.granted) {
+  if (!permission.granted || !micPermission.granted) {
+    const needsCamera = !permission.granted;
+    const needsMic = !micPermission.granted;
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.centered}>
           <Text style={{ fontSize: 48, marginBottom: 16 }}>🎥</Text>
-          <Text style={styles.permissionTitle}>Camera Access Needed</Text>
+          <Text style={styles.permissionTitle}>Permissions Needed</Text>
           <Text style={styles.permissionText}>
-            We need camera access to record your birthday interview video.
+            We need camera and microphone access to record your birthday interview video.
           </Text>
-          <TouchableOpacity style={styles.primaryButton} onPress={requestPermission}>
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={async () => {
+              if (needsCamera) await requestPermission();
+              if (needsMic) await requestMicPermission();
+            }}
+          >
             <Text style={styles.primaryButtonText}>Grant Permission</Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -235,70 +225,12 @@ export default function InterviewScreen({ route, navigation }) {
     );
   }
 
-  // ─── Phase 1: Intro ───
+  // ─── Phase 1 & 2: Intro + Recording (single persistent camera) ───
 
-  if (phase === 'intro') {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.introContainer}>
-          {/* Camera Preview */}
-          <View style={styles.cameraPreviewWrapper}>
-            <CameraView
-              ref={cameraRef}
-              style={styles.cameraPreview}
-              mode="video"
-              facing={facing}
-            />
-            {/* Flip button */}
-            <TouchableOpacity
-              style={styles.flipButton}
-              onPress={() => setFacing(facing === 'front' ? 'back' : 'front')}
-            >
-              <Text style={styles.flipButtonText}>Flip</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Info section */}
-          <View style={styles.introInfo}>
-            <Text style={styles.introTitle}>
-              {childName}'s Birthday Interview
-            </Text>
-            <Text style={styles.introInstructions}>
-              Record your birthday interview! The camera will record continuously
-              while you go through the questions.
-            </Text>
-            <Text style={styles.introDetail}>
-              {totalQuestions} questions across 6 categories
-            </Text>
-
-            <TouchableOpacity
-              style={styles.startRecordingButton}
-              onPress={startRecording}
-            >
-              <View style={styles.recordIconOuter}>
-                <View style={styles.recordIconInner} />
-              </View>
-              <Text style={styles.startRecordingText}>Start Recording</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.secondaryButton}
-              onPress={() => navigation.goBack()}
-            >
-              <Text style={styles.secondaryButtonText}>Cancel</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </SafeAreaView>
-    );
-  }
-
-  // ─── Phase 2: Recording ───
-
-  if (phase === 'recording') {
+  if (phase === 'intro' || phase === 'recording') {
     return (
       <View style={styles.recordingContainer}>
-        {/* Full-screen camera */}
+        {/* Single persistent camera - never unmounts between intro and recording */}
         <CameraView
           ref={cameraRef}
           style={StyleSheet.absoluteFill}
@@ -306,189 +238,135 @@ export default function InterviewScreen({ route, navigation }) {
           facing={facing}
         />
 
-        {/* Top bar: recording indicator + flip + progress */}
-        <SafeAreaView style={styles.recordingTopBar}>
-          <View style={styles.recordingTopRow}>
-            <View style={styles.recordingIndicator}>
-              <PulsingDot />
-              <Text style={styles.recordingIndicatorText}>REC</Text>
-            </View>
+        {phase === 'intro' && (
+          <>
+            {/* Flip button */}
             <TouchableOpacity
-              style={styles.flipButtonSmall}
+              style={[styles.flipButton, { position: 'absolute', top: 50, right: 16, zIndex: 10 }]}
               onPress={() => setFacing(facing === 'front' ? 'back' : 'front')}
             >
-              <Text style={styles.flipButtonSmallText}>Flip</Text>
+              <Text style={styles.flipButtonText}>Flip</Text>
             </TouchableOpacity>
-          </View>
-          <View style={styles.recordingProgressWrapper}>
-            <ProgressBar current={currentQuestionIndex} total={totalQuestions} />
-          </View>
-        </SafeAreaView>
 
-        {/* Bottom panel: question + controls */}
-        <View style={styles.recordingBottomPanel}>
-          <Text style={styles.questionCounter}>
-            Question {currentQuestionIndex + 1} of {totalQuestions}
-          </Text>
-          <Text style={styles.questionText}>{currentQuestion.text}</Text>
-
-          {/* Navigation buttons */}
-          <View style={styles.navRow}>
-            <TouchableOpacity
-              style={[
-                styles.navButton,
-                currentQuestionIndex === 0 && styles.navButtonDisabled,
-              ]}
-              onPress={goPrev}
-              disabled={currentQuestionIndex === 0}
-            >
-              <Text
-                style={[
-                  styles.navButtonText,
-                  currentQuestionIndex === 0 && styles.navButtonTextDisabled,
-                ]}
-              >
-                Prev
+            {/* Info section overlaid at bottom */}
+            <View style={styles.introOverlay}>
+              <Text style={styles.introTitle}>
+                {childName}'s Berfdayy Interview
               </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={styles.stopRecordingButton}
-              onPress={stopRecording}
-            >
-              <View style={styles.stopIcon} />
-              <Text style={styles.stopRecordingText}>Stop</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.navButton,
-                currentQuestionIndex === totalQuestions - 1 && styles.navButtonDisabled,
-              ]}
-              onPress={goNext}
-              disabled={currentQuestionIndex === totalQuestions - 1}
-            >
-              <Text
-                style={[
-                  styles.navButtonText,
-                  currentQuestionIndex === totalQuestions - 1 && styles.navButtonTextDisabled,
-                ]}
-              >
-                Next
+              <Text style={styles.introInstructions}>
+                Record your birthday interview! The camera will record continuously
+                while you go through the questions.
               </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </View>
-    );
-  }
+              <Text style={styles.introDetail}>
+                {totalQuestions} questions across 6 categories
+              </Text>
 
-  // ─── Phase 3: Answer Entry ───
-
-  if (phase === 'answers') {
-    const isLastQuestion = currentQuestionIndex === totalQuestions - 1;
-
-    return (
-      <SafeAreaView style={styles.container}>
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        >
-          {/* Top progress */}
-          <View style={styles.answersTopBar}>
-            <View style={styles.answersHeader}>
-              <Text style={styles.answersTitle}>Enter Answers</Text>
-              <View style={styles.videoSavedBadge}>
-                <Text style={styles.videoSavedText}>Video saved</Text>
-              </View>
-            </View>
-            <ProgressBar current={currentQuestionIndex} total={totalQuestions} />
-          </View>
-
-          <ScrollView
-            style={styles.answersContent}
-            contentContainerStyle={styles.answersContentInner}
-            keyboardShouldPersistTaps="handled"
-          >
-            {/* Question counter */}
-            <Text style={styles.answerQuestionCounter}>
-              Question {currentQuestionIndex + 1} of {totalQuestions}
-            </Text>
-
-            {/* Question text */}
-            <Text style={styles.answerQuestionText}>{currentQuestion.text}</Text>
-
-            {/* Answer input */}
-            <TextInput
-              style={styles.answerInput}
-              placeholder="Type the answer here..."
-              placeholderTextColor={COLORS.textLight}
-              value={answers[currentQuestion.id] || ''}
-              onChangeText={(text) =>
-                setAnswers((prev) => ({ ...prev, [currentQuestion.id]: text }))
-              }
-              multiline
-              textAlignVertical="top"
-              autoFocus={false}
-            />
-          </ScrollView>
-
-          {/* Bottom controls */}
-          <View style={styles.answersBottomBar}>
-            <View style={styles.navRow}>
               <TouchableOpacity
-                style={[
-                  styles.answerNavButton,
-                  currentQuestionIndex === 0 && styles.answerNavButtonDisabled,
-                ]}
-                onPress={goPrev}
-                disabled={currentQuestionIndex === 0}
+                style={styles.startRecordingButton}
+                onPress={startRecording}
               >
-                <Text
-                  style={[
-                    styles.answerNavButtonText,
-                    currentQuestionIndex === 0 && styles.answerNavButtonTextDisabled,
-                  ]}
-                >
-                  Previous
-                </Text>
+                <View style={styles.recordIconOuter}>
+                  <View style={styles.recordIconInner} />
+                </View>
+                <Text style={styles.startRecordingText}>Start Recording</Text>
               </TouchableOpacity>
 
-              {isLastQuestion ? (
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={() => navigation.goBack()}
+              >
+                <Text style={[styles.secondaryButtonText, { color: 'rgba(255,255,255,0.7)' }]}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </>
+        )}
+
+        {phase === 'recording' && !saving && (
+          <>
+            {/* Top bar: recording indicator + flip + progress */}
+            <SafeAreaView style={styles.recordingTopBar}>
+              <View style={styles.recordingTopRow}>
+                <View style={styles.recordingIndicator}>
+                  <PulsingDot />
+                  <Text style={styles.recordingIndicatorText}>REC</Text>
+                </View>
                 <TouchableOpacity
-                  style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-                  onPress={handleSave}
-                  disabled={saving}
+                  style={styles.flipButtonSmall}
+                  onPress={() => setFacing(facing === 'front' ? 'back' : 'front')}
                 >
-                  <Text style={styles.saveButtonText}>
-                    {saving ? 'Saving...' : 'Save Interview'}
+                  <Text style={styles.flipButtonSmallText}>Flip</Text>
+                </TouchableOpacity>
+              </View>
+              <View style={styles.recordingProgressWrapper}>
+                <ProgressBar current={currentQuestionIndex} total={totalQuestions} />
+              </View>
+            </SafeAreaView>
+
+            {/* Bottom panel: question + controls */}
+            <View style={styles.recordingBottomPanel}>
+              <Text style={styles.questionCounter}>
+                Question {currentQuestionIndex + 1} of {totalQuestions}
+              </Text>
+              <Text style={styles.questionText}>{currentQuestion.text}</Text>
+
+              {/* Navigation buttons */}
+              <View style={styles.navRow}>
+                <TouchableOpacity
+                  style={[
+                    styles.navButton,
+                    currentQuestionIndex === 0 && styles.navButtonDisabled,
+                  ]}
+                  onPress={goPrev}
+                  disabled={currentQuestionIndex === 0}
+                >
+                  <Text
+                    style={[
+                      styles.navButtonText,
+                      currentQuestionIndex === 0 && styles.navButtonTextDisabled,
+                    ]}
+                  >
+                    Prev
                   </Text>
                 </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={styles.answerNavButton}
-                  onPress={goNext}
-                >
-                  <Text style={styles.answerNavButtonText}>Next</Text>
-                </TouchableOpacity>
-              )}
-            </View>
 
-            {/* Always-visible save for non-last questions */}
-            {!isLastQuestion && (
-              <TouchableOpacity
-                style={[styles.earlyFinishButton, saving && styles.saveButtonDisabled]}
-                onPress={handleSave}
-                disabled={saving}
-              >
-                <Text style={styles.earlyFinishText}>
-                  {saving ? 'Saving...' : 'Finish & Save Early'}
-                </Text>
-              </TouchableOpacity>
-            )}
+                <TouchableOpacity
+                  style={styles.stopRecordingButton}
+                  onPress={stopRecording}
+                >
+                  <View style={styles.stopIcon} />
+                  <Text style={styles.stopRecordingText}>Stop</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[
+                    styles.navButton,
+                    currentQuestionIndex === totalQuestions - 1 && styles.navButtonDisabled,
+                  ]}
+                  onPress={goNext}
+                  disabled={currentQuestionIndex === totalQuestions - 1}
+                >
+                  <Text
+                    style={[
+                      styles.navButtonText,
+                      currentQuestionIndex === totalQuestions - 1 && styles.navButtonTextDisabled,
+                    ]}
+                  >
+                    Next
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </>
+        )}
+
+        {/* Saving overlay */}
+        {saving && (
+          <View style={styles.savingOverlay}>
+            <ActivityIndicator size="large" color={COLORS.white} />
+            <Text style={styles.savingText}>Saving interview...</Text>
           </View>
-        </KeyboardAvoidingView>
-      </SafeAreaView>
+        )}
+      </View>
     );
   }
 
@@ -557,22 +435,7 @@ const styles = StyleSheet.create({
   },
 
   // ─── Phase 1: Intro ───
-  introContainer: {
-    flex: 1,
-  },
-  cameraPreviewWrapper: {
-    height: '45%',
-    backgroundColor: COLORS.black,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  cameraPreview: {
-    flex: 1,
-  },
   flipButton: {
-    position: 'absolute',
-    top: 12,
-    right: 12,
     backgroundColor: 'rgba(0,0,0,0.5)',
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -583,22 +446,29 @@ const styles = StyleSheet.create({
     fontSize: SIZES.md,
     fontWeight: '600',
   },
-  introInfo: {
-    flex: 1,
+  introOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.65)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: SIZES.paddingLg,
+    paddingBottom: 40,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
   },
   introTitle: {
     fontSize: SIZES.xxl,
     fontWeight: '700',
-    color: COLORS.text,
+    color: COLORS.white,
     textAlign: 'center',
     marginBottom: 12,
   },
   introInstructions: {
     fontSize: SIZES.base,
-    color: COLORS.textSecondary,
+    color: 'rgba(255,255,255,0.8)',
     textAlign: 'center',
     lineHeight: 22,
     marginBottom: 8,
@@ -606,7 +476,7 @@ const styles = StyleSheet.create({
   },
   introDetail: {
     fontSize: SIZES.sm,
-    color: COLORS.textLight,
+    color: 'rgba(255,255,255,0.6)',
     marginBottom: 24,
   },
   startRecordingButton: {
@@ -768,123 +638,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  // ─── Phase 3: Answer Entry ───
-  answersTopBar: {
-    backgroundColor: COLORS.surface,
-    paddingHorizontal: SIZES.paddingLg,
-    paddingTop: SIZES.padding,
-    paddingBottom: SIZES.paddingSm,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.border,
-  },
-  answersHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+  // ─── Saving Overlay ───
+  savingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.7)',
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'center',
+    zIndex: 20,
   },
-  answersTitle: {
-    fontSize: SIZES.xl,
-    fontWeight: '700',
-    color: COLORS.text,
-  },
-  videoSavedBadge: {
-    backgroundColor: '#ECFDF5',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: SIZES.radiusFull,
-  },
-  videoSavedText: {
-    color: COLORS.success,
-    fontSize: SIZES.sm,
-    fontWeight: '600',
-  },
-  answersContent: {
-    flex: 1,
-  },
-  answersContentInner: {
-    padding: SIZES.paddingLg,
-    paddingBottom: 24,
-  },
-  answerQuestionCounter: {
-    fontSize: SIZES.sm,
-    fontWeight: '600',
-    color: COLORS.primary,
-    marginBottom: 8,
-  },
-  answerQuestionText: {
-    fontSize: SIZES.xl,
-    fontWeight: '600',
-    color: COLORS.text,
-    lineHeight: 30,
-    marginBottom: 20,
-  },
-  answerInput: {
-    backgroundColor: COLORS.surface,
-    borderWidth: 1,
-    borderColor: COLORS.border,
-    borderRadius: SIZES.radius,
-    paddingHorizontal: SIZES.padding,
-    paddingVertical: 14,
-    fontSize: SIZES.base,
-    color: COLORS.text,
-    minHeight: 120,
-    lineHeight: 22,
-  },
-  answersBottomBar: {
-    backgroundColor: COLORS.surface,
-    paddingHorizontal: SIZES.paddingLg,
-    paddingTop: SIZES.paddingSm,
-    paddingBottom: SIZES.paddingLg,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.border,
-  },
-  answerNavButton: {
-    backgroundColor: COLORS.primaryFaint,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: SIZES.radiusFull,
-    minWidth: 96,
-    alignItems: 'center',
-  },
-  answerNavButtonDisabled: {
-    opacity: 0.4,
-  },
-  answerNavButtonText: {
-    color: COLORS.primary,
-    fontSize: SIZES.md,
-    fontWeight: '600',
-  },
-  answerNavButtonTextDisabled: {
-    color: COLORS.primaryLight,
-  },
-  saveButton: {
-    backgroundColor: COLORS.primary,
-    paddingHorizontal: 28,
-    paddingVertical: 12,
-    borderRadius: SIZES.radiusFull,
-    shadowColor: COLORS.primaryDark,
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
-  },
-  saveButtonDisabled: {
-    opacity: 0.6,
-  },
-  saveButtonText: {
+  savingText: {
     color: COLORS.white,
-    fontSize: SIZES.md,
-    fontWeight: '700',
-  },
-  earlyFinishButton: {
-    alignItems: 'center',
-    paddingVertical: 10,
-    marginTop: 8,
-  },
-  earlyFinishText: {
-    color: COLORS.textSecondary,
-    fontSize: SIZES.sm,
+    fontSize: SIZES.lg,
     fontWeight: '600',
+    marginTop: 16,
   },
 });

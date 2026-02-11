@@ -12,7 +12,9 @@ const DEFAULT_QUESTIONS = [
   { id: 'q5', text: "What's your favorite song or music?", category: 'favorites' },
   { id: 'q6', text: "What's your favorite book or story?", category: 'favorites' },
   { id: 'q7', text: "What's your favorite thing to do for fun?", category: 'favorites' },
-  { id: 'q8', text: "What's your favorite movie or TV show?", category: 'favorites' },
+  { id: 'q8', text: "What's your favorite movie?", category: 'favorites' },
+  { id: 'q21', text: "What's your favorite TV show?", category: 'favorites' },
+  { id: 'q22', text: "What's your favorite restaurant?", category: 'favorites' },
 
   // Friends & Family
   { id: 'q9', text: "Who's your best friend?", category: 'people' },

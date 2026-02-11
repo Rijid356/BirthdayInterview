@@ -153,14 +153,18 @@ export default function YearCompareScreen({ route }) {
                         <Text style={styles.yearLabel}>
                           {interview.year} (age {interview.age})
                         </Text>
-                        <Text
-                          style={[
-                            styles.answerText,
-                            !answer && styles.answerEmpty,
-                          ]}
-                        >
-                          {answer || '\u2014'}
-                        </Text>
+                        {Object.keys(interview.answers || {}).length === 0 ? (
+                          <Text style={styles.answerVideoOnly}>Video only</Text>
+                        ) : (
+                          <Text
+                            style={[
+                              styles.answerText,
+                              !answer && styles.answerEmpty,
+                            ]}
+                          >
+                            {answer || '\u2014'}
+                          </Text>
+                        )}
                       </View>
                     </View>
                   );
@@ -307,6 +311,12 @@ const styles = StyleSheet.create({
   },
   answerEmpty: {
     color: COLORS.textLight,
+  },
+  answerVideoOnly: {
+    fontSize: SIZES.base,
+    color: COLORS.accent,
+    fontStyle: 'italic',
+    lineHeight: 22,
   },
 
   // Empty State

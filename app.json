@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Birthday Interview",
-    "slug": "birthday-interview",
+    "name": "Berfdayy",
+    "slug": "berfdayy",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -15,7 +15,7 @@
       "adaptiveIcon": {
         "backgroundColor": "#FF6B8A"
       },
-      "package": "com.ryandonnelly.birthdayinterview",
+      "package": "com.ryandonnelly.berfdayy",
       "permissions": [
         "CAMERA",
         "RECORD_AUDIO",
@@ -27,16 +27,16 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Birthday Interview to access your camera to record interview videos.",
-          "microphonePermission": "Allow Birthday Interview to access your microphone to record audio during interviews.",
+          "cameraPermission": "Allow Berfdayy to access your camera to record interview videos.",
+          "microphonePermission": "Allow Berfdayy to access your microphone to record audio during interviews.",
           "recordAudioAndroid": true
         }
       ],
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow Birthday Interview to save videos to your photo library.",
-          "savePhotosPermission": "Allow Birthday Interview to save interview videos."
+          "photosPermission": "Allow Berfdayy to save videos to your photo library.",
+          "savePhotosPermission": "Allow Berfdayy to save interview videos."
         }
       ],
       "expo-asset"

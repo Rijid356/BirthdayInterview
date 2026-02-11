@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SIZES } from '../utils/theme';
 import { getInterviews, getChildren } from '../utils/storage';
@@ -61,24 +61,26 @@ export default function InterviewReviewScreen({ route }) {
     );
   }
 
-  // Build grouped Q&A: only include questions that have answers
+  // Build question lookup
   const questionsById = {};
   DEFAULT_QUESTIONS.forEach((q) => {
     questionsById[q.id] = q;
   });
 
-  const answeredByCategory = {};
   const interviewQuestions = interview.questions || DEFAULT_QUESTIONS.map((q) => q.id);
+  const hasAnswers = Object.keys(interview.answers || {}).length > 0;
 
+  // Group questions (with or without answers) by category
+  const groupedByCategory = {};
   interviewQuestions.forEach((qId) => {
-    const answer = interview.answers?.[qId];
-    if (!answer) return;
     const question = questionsById[qId];
     if (!question) return;
-    if (!answeredByCategory[question.category]) {
-      answeredByCategory[question.category] = [];
+    const answer = interview.answers?.[qId];
+    if (hasAnswers && !answer) return; // For old interviews, only show answered questions
+    if (!groupedByCategory[question.category]) {
+      groupedByCategory[question.category] = [];
     }
-    answeredByCategory[question.category].push({ ...question, answer });
+    groupedByCategory[question.category].push({ ...question, answer: answer || null });
   });
 
   // Maintain category display order
@@ -137,9 +139,18 @@ export default function InterviewReviewScreen({ route }) {
         </View>
       </View>
 
+      {/* Video Interview banner for video-only interviews */}
+      {!hasAnswers && (
+        <View style={styles.videoBanner}>
+          <Text style={styles.videoBannerEmoji}>🎬</Text>
+          <Text style={styles.videoBannerText}>Video Interview</Text>
+          <Text style={styles.videoBannerSub}>Answers are captured in the video above</Text>
+        </View>
+      )}
+
       {/* Q&A by Category */}
       {categoryOrder.map((catKey) => {
-        const items = answeredByCategory[catKey];
+        const items = groupedByCategory[catKey];
         if (!items || items.length === 0) return null;
         const category = QUESTION_CATEGORIES[catKey];
         return (
@@ -150,7 +161,9 @@ export default function InterviewReviewScreen({ route }) {
             {items.map((item) => (
               <View key={item.id} style={styles.qaCard}>
                 <Text style={styles.questionText}>{item.text}</Text>
-                <Text style={styles.answerText}>{item.answer}</Text>
+                {item.answer && (
+                  <Text style={styles.answerText}>{item.answer}</Text>
+                )}
               </View>
             ))}
           </View>
@@ -247,6 +260,29 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   metaDate: {
+    fontSize: SIZES.sm,
+    color: COLORS.textSecondary,
+  },
+
+  // Video Interview Banner
+  videoBanner: {
+    backgroundColor: COLORS.primaryFaint,
+    borderRadius: SIZES.radiusLg,
+    padding: SIZES.padding,
+    marginBottom: SIZES.paddingLg,
+    alignItems: 'center',
+  },
+  videoBannerEmoji: {
+    fontSize: 32,
+    marginBottom: 6,
+  },
+  videoBannerText: {
+    fontSize: SIZES.lg,
+    fontWeight: '700',
+    color: COLORS.primary,
+    marginBottom: 4,
+  },
+  videoBannerSub: {
     fontSize: SIZES.sm,
     color: COLORS.textSecondary,
   },

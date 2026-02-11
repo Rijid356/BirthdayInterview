@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 const CHILDREN_KEY = '@birthday_interview_children';
 const INTERVIEWS_KEY = '@birthday_interview_sessions';

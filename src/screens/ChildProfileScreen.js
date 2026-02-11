@@ -94,7 +94,9 @@ export default function ChildProfileScreen({ route, navigation }) {
       <View style={styles.interviewCardCenter}>
         <Text style={styles.interviewDate}>{formatInterviewDate(item.date)}</Text>
         <Text style={styles.interviewQuestionCount}>
-          {Object.keys(item.answers || {}).length} answers recorded
+          {Object.keys(item.answers || {}).length > 0
+            ? `${Object.keys(item.answers || {}).length} answers recorded`
+            : 'Video interview'}
         </Text>
       </View>
       <Text style={styles.chevron}>›</Text>

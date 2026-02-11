@@ -1,4 +1,4 @@
-# 🎂 Birthday Interview App
+# 🎂 Berfdayy
 
 A React Native (Expo) app for recording annual birthday interviews with your kids. Each year, ask them the same set of fun questions, record a video, and log their answers. Watch how they grow and change over the years!
 
