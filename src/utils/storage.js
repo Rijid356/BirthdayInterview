@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import * as FileSystem from 'expo-file-system/legacy';
+import { FileSystem } from './native-modules';
 
 const CHILDREN_KEY = '@birthday_interview_children';
 const INTERVIEWS_KEY = '@birthday_interview_sessions';
@@ -58,7 +58,7 @@ export async function saveInterview(interview) {
 export async function deleteInterview(interviewId) {
   const interviews = await getInterviews();
   const target = interviews.find((i) => i.id === interviewId);
-  if (target?.videoUri) {
+  if (target?.videoUri && FileSystem) {
     try {
       const info = await FileSystem.getInfoAsync(target.videoUri);
       if (info.exists) await FileSystem.deleteAsync(target.videoUri);
@@ -72,9 +72,12 @@ export async function deleteInterview(interviewId) {
 
 // ─── Video Storage ───
 
-export const VIDEO_DIR = `${FileSystem.documentDirectory}interview-videos/`;
+export const VIDEO_DIR = FileSystem
+  ? `${FileSystem.documentDirectory}interview-videos/`
+  : '';
 
 export async function moveVideoToStorage(tempUri, filename) {
+  if (!FileSystem) throw new Error('File system not available on this platform');
   const info = await FileSystem.getInfoAsync(VIDEO_DIR);
   if (!info.exists) await FileSystem.makeDirectoryAsync(VIDEO_DIR, { intermediates: true });
   const dest = `${VIDEO_DIR}${filename}`;
