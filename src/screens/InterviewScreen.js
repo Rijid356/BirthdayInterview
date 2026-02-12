@@ -10,6 +10,7 @@ import {
   Animated,
 } from 'react-native';
 import { CameraView, useCameraPermissions, useMicrophonePermissions } from 'expo-camera';
+import { Ionicons } from '@expo/vector-icons';
 import { COLORS, SIZES } from '../utils/theme';
 import {
   getChildren,
@@ -96,6 +97,8 @@ export default function InterviewScreen({ route, navigation }) {
   const cameraRef = useRef(null);
   const [permission, requestPermission] = useCameraPermissions();
   const [micPermission, requestMicPermission] = useMicrophonePermissions();
+  const recordingStartTime = useRef(0);
+  const questionTimestamps = useRef([]);
 
   // State
   const [phase, setPhase] = useState('intro'); // 'intro' | 'recording'
@@ -112,12 +115,20 @@ export default function InterviewScreen({ route, navigation }) {
   function goNext() {
     if (currentQuestionIndex < totalQuestions - 1) {
       setCurrentQuestionIndex(currentQuestionIndex + 1);
+      questionTimestamps.current.push({
+        questionId: questions[currentQuestionIndex + 1].id,
+        timestampMs: Date.now() - recordingStartTime.current,
+      });
     }
   }
 
   function goPrev() {
     if (currentQuestionIndex > 0) {
       setCurrentQuestionIndex(currentQuestionIndex - 1);
+      questionTimestamps.current.push({
+        questionId: questions[currentQuestionIndex - 1].id,
+        timestampMs: Date.now() - recordingStartTime.current,
+      });
     }
   }
 
@@ -143,6 +154,7 @@ export default function InterviewScreen({ route, navigation }) {
         answers: {},
         videoUri: storedUri,
         createdAt: new Date().toISOString(),
+        questionTimestamps: questionTimestamps.current,
       };
 
       await saveInterview(interview);
@@ -159,6 +171,8 @@ export default function InterviewScreen({ route, navigation }) {
     setPhase('recording');
     setIsRecording(true);
     setCurrentQuestionIndex(0);
+    recordingStartTime.current = Date.now();
+    questionTimestamps.current = [{ questionId: questions[0].id, timestampMs: 0 }];
 
     try {
       const result = await cameraRef.current.recordAsync();
@@ -245,7 +259,7 @@ export default function InterviewScreen({ route, navigation }) {
               style={[styles.flipButton, { position: 'absolute', top: 50, right: 16, zIndex: 10 }]}
               onPress={() => setFacing(facing === 'front' ? 'back' : 'front')}
             >
-              <Text style={styles.flipButtonText}>Flip</Text>
+              <Ionicons name="camera-reverse-outline" size={22} color={COLORS.white} />
             </TouchableOpacity>
 
             {/* Info section overlaid at bottom */}
@@ -294,7 +308,7 @@ export default function InterviewScreen({ route, navigation }) {
                   style={styles.flipButtonSmall}
                   onPress={() => setFacing(facing === 'front' ? 'back' : 'front')}
                 >
-                  <Text style={styles.flipButtonSmallText}>Flip</Text>
+                  <Ionicons name="camera-reverse-outline" size={18} color={COLORS.white} />
                 </TouchableOpacity>
               </View>
               <View style={styles.recordingProgressWrapper}>
@@ -437,14 +451,8 @@ const styles = StyleSheet.create({
   // ─── Phase 1: Intro ───
   flipButton: {
     backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    padding: 10,
     borderRadius: SIZES.radiusFull,
-  },
-  flipButtonText: {
-    color: COLORS.white,
-    fontSize: SIZES.md,
-    fontWeight: '600',
   },
   introOverlay: {
     position: 'absolute',
@@ -557,14 +565,8 @@ const styles = StyleSheet.create({
   },
   flipButtonSmall: {
     backgroundColor: 'rgba(0,0,0,0.5)',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    padding: 8,
     borderRadius: SIZES.radiusFull,
-  },
-  flipButtonSmallText: {
-    color: COLORS.white,
-    fontSize: SIZES.sm,
-    fontWeight: '600',
   },
   recordingProgressWrapper: {
     paddingHorizontal: 4,

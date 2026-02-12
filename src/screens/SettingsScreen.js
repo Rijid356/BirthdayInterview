@@ -10,8 +10,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
-import * as FileSystem from 'expo-file-system/legacy';
-import * as Sharing from 'expo-sharing';
+import { FileSystem, Sharing } from '../utils/native-modules';
 import { COLORS, SIZES } from '../utils/theme';
 import {
   getChildren,
@@ -45,6 +44,10 @@ export default function SettingsScreen() {
   );
 
   async function handleExport() {
+    if (!FileSystem || !Sharing) {
+      Alert.alert('Not Available', 'Export is not available on web.');
+      return;
+    }
     setExporting(true);
     try {
       const data = await exportAllData();

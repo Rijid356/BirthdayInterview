@@ -103,6 +103,7 @@ export default function ChildProfileScreen({ route, navigation }) {
 
   const renderInterviewCard = ({ item }) => (
     <TouchableOpacity
+      testID={`interview-card-${item.id}`}
       style={styles.interviewCard}
       onPress={() =>
         navigation.navigate('InterviewReview', { interviewId: item.id })

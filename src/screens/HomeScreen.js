@@ -52,6 +52,7 @@ export default function HomeScreen({ navigation }) {
           contentContainerStyle={{ padding: SIZES.padding }}
           renderItem={({ item }) => (
             <TouchableOpacity
+              testID={`child-card-${item.id}`}
               style={styles.card}
               onPress={() => navigation.navigate('ChildProfile', { childId: item.id })}
             >

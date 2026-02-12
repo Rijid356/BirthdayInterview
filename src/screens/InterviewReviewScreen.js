@@ -1,7 +1,7 @@
-import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import React, { useState, useCallback, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
-import * as FileSystem from 'expo-file-system/legacy';
+import { FileSystem, MediaLibrary, Sharing } from '../utils/native-modules';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SIZES } from '../utils/theme';
 import { getInterviews, getChildren } from '../utils/storage';
@@ -13,6 +13,8 @@ export default function InterviewReviewScreen({ route }) {
   const [child, setChild] = useState(null);
   const [videoExists, setVideoExists] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [currentOverlayQuestion, setCurrentOverlayQuestion] = useState(null);
+  const videoRef = useRef(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -31,8 +33,12 @@ export default function InterviewReviewScreen({ route }) {
           setChild(matchedChild || null);
 
           if (found.videoUri) {
-            const info = await FileSystem.getInfoAsync(found.videoUri);
-            setVideoExists(info.exists);
+            if (FileSystem) {
+              const info = await FileSystem.getInfoAsync(found.videoUri);
+              setVideoExists(info.exists);
+            } else if (found.videoUri.startsWith('http')) {
+              setVideoExists(true);
+            }
           }
         } catch (e) {
           console.warn('Failed to load interview:', e);
@@ -66,6 +72,51 @@ export default function InterviewReviewScreen({ route }) {
   DEFAULT_QUESTIONS.forEach((q) => {
     questionsById[q.id] = q;
   });
+
+  async function handleSaveToLibrary() {
+    if (!MediaLibrary) return;
+    try {
+      const { status } = await MediaLibrary.requestPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission Needed', 'Please allow access to save videos to your camera roll.');
+        return;
+      }
+      await MediaLibrary.saveToLibraryAsync(interview.videoUri);
+      Alert.alert('Saved!', 'Video saved to your camera roll.');
+    } catch (e) {
+      console.warn('Save to library error:', e);
+      Alert.alert('Error', 'Could not save the video.');
+    }
+  }
+
+  async function handleShare() {
+    if (!Sharing) return;
+    try {
+      const available = await Sharing.isAvailableAsync();
+      if (!available) {
+        Alert.alert('Sharing Unavailable', 'Sharing is not available on this device.');
+        return;
+      }
+      await Sharing.shareAsync(interview.videoUri, { mimeType: 'video/mp4' });
+    } catch (e) {
+      console.warn('Share error:', e);
+      Alert.alert('Error', 'Could not share the video.');
+    }
+  }
+
+  function handlePlaybackStatus(status) {
+    if (!status.isLoaded || !interview.questionTimestamps) return;
+    const pos = status.positionMillis;
+    const timestamps = interview.questionTimestamps;
+    let activeQ = null;
+    for (let i = timestamps.length - 1; i >= 0; i--) {
+      if (timestamps[i].timestampMs <= pos) {
+        activeQ = questionsById[timestamps[i].questionId];
+        break;
+      }
+    }
+    setCurrentOverlayQuestion(activeQ ? activeQ.text : null);
+  }
 
   const interviewQuestions = interview.questions || DEFAULT_QUESTIONS.map((q) => q.id);
   const hasAnswers = Object.keys(interview.answers || {}).length > 0;
@@ -103,12 +154,21 @@ export default function InterviewReviewScreen({ route }) {
       {/* Video Player */}
       <View style={styles.videoCard}>
         {interview.videoUri && videoExists ? (
-          <Video
-            source={{ uri: interview.videoUri }}
-            useNativeControls
-            resizeMode={ResizeMode.CONTAIN}
-            style={styles.video}
-          />
+          <View>
+            <Video
+              ref={videoRef}
+              source={{ uri: interview.videoUri }}
+              useNativeControls
+              resizeMode={ResizeMode.CONTAIN}
+              style={styles.video}
+              onPlaybackStatusUpdate={handlePlaybackStatus}
+            />
+            {currentOverlayQuestion && (
+              <View testID="question-overlay" style={styles.questionOverlay} pointerEvents="none">
+                <Text testID="question-overlay-text" style={styles.questionOverlayText}>{currentOverlayQuestion}</Text>
+              </View>
+            )}
+          </View>
         ) : (
           <View style={styles.videoPlaceholder}>
             <Text style={{ fontSize: 40 }}>🎥</Text>
@@ -116,6 +176,17 @@ export default function InterviewReviewScreen({ route }) {
           </View>
         )}
       </View>
+
+      {interview.videoUri && videoExists && (
+        <View style={styles.videoActions}>
+          <TouchableOpacity testID="button-save-video" style={styles.actionButton} onPress={handleSaveToLibrary}>
+            <Text style={styles.actionButtonText}>Save to Camera Roll</Text>
+          </TouchableOpacity>
+          <TouchableOpacity testID="button-share-video" style={styles.actionButton} onPress={handleShare}>
+            <Text style={styles.actionButtonText}>Share</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Interview Metadata */}
       <View style={styles.metaCard}>
@@ -222,6 +293,43 @@ const styles = StyleSheet.create({
     fontSize: SIZES.md,
     color: COLORS.textLight,
     marginTop: 8,
+  },
+  videoActions: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: SIZES.padding,
+  },
+  actionButton: {
+    flex: 1,
+    backgroundColor: COLORS.surface,
+    borderRadius: SIZES.radiusLg,
+    paddingVertical: 12,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  actionButtonText: {
+    fontSize: SIZES.sm,
+    fontWeight: '600',
+    color: COLORS.primary,
+  },
+  questionOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(0,0,0,0.55)',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+  },
+  questionOverlayText: {
+    color: '#FFFFFF',
+    fontSize: SIZES.md,
+    fontWeight: '600',
+    textAlign: 'center',
   },
 
   // Metadata
