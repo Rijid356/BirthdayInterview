@@ -119,9 +119,14 @@ export default function ChildProfileScreen({ route, navigation }) {
       <View style={styles.interviewCardCenter}>
         <Text style={styles.interviewDate}>{formatInterviewDate(item.date)}</Text>
         <Text style={styles.interviewQuestionCount}>
-          {Object.keys(item.answers || {}).length > 0
-            ? `${Object.keys(item.answers || {}).length} answers recorded`
-            : 'Video interview'}
+          {item.transcription?.status === 'processing'
+            ? 'Transcribing...'
+            : item.transcription?.status === 'failed'
+              ? 'Transcription failed'
+              : (() => {
+                  const count = Object.values(item.answers || {}).filter((a) => a?.text).length;
+                  return count > 0 ? `${count} answers` : 'No answers yet';
+                })()}
         </Text>
       </View>
       <Text style={styles.chevron}>›</Text>

@@ -18,6 +18,8 @@ import {
   getBalloonRuns,
   exportAllData,
   importData,
+  getApiKeys,
+  saveApiKeys,
 } from '../utils/storage';
 
 export default function SettingsScreen() {
@@ -28,6 +30,10 @@ export default function SettingsScreen() {
   const [importing, setImporting] = useState(false);
   const [importText, setImportText] = useState('');
   const [showImport, setShowImport] = useState(false);
+  const [apiKeys, setApiKeys] = useState({ openaiKey: '', spotifyClientId: '', spotifyClientSecret: '' });
+  const [showOpenaiKey, setShowOpenaiKey] = useState(false);
+  const [showSpotifySecret, setShowSpotifySecret] = useState(false);
+  const [savingKeys, setSavingKeys] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -39,7 +45,12 @@ export default function SettingsScreen() {
         setInterviewCount(interviews.length);
         setBalloonRunCount(balloonRuns.length);
       }
+      async function loadKeys() {
+        const keys = await getApiKeys();
+        setApiKeys(keys);
+      }
       loadCounts();
+      loadKeys();
     }, [])
   );
 
@@ -207,6 +218,87 @@ export default function SettingsScreen() {
         )}
       </View>
 
+      {/* ─── API Keys ─── */}
+      <Text style={styles.sectionHeader}>API Keys</Text>
+      <View style={styles.card}>
+        <Text style={styles.cardDescription}>
+          Required for auto-transcription and Spotify integration. Stored on device only — never included in exports.
+        </Text>
+
+        <Text style={styles.fieldLabel}>OpenAI API Key</Text>
+        <View style={styles.keyInputRow}>
+          <TextInput
+            style={[styles.keyInput, { flex: 1 }]}
+            value={apiKeys.openaiKey}
+            onChangeText={(val) => setApiKeys({ ...apiKeys, openaiKey: val })}
+            placeholder="sk-..."
+            placeholderTextColor={COLORS.textLight}
+            secureTextEntry={!showOpenaiKey}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TouchableOpacity
+            style={styles.visibilityToggle}
+            onPress={() => setShowOpenaiKey(!showOpenaiKey)}
+          >
+            <Text style={styles.visibilityToggleText}>{showOpenaiKey ? 'Hide' : 'Show'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.fieldLabel}>Spotify Client ID</Text>
+        <TextInput
+          style={styles.keyInput}
+          value={apiKeys.spotifyClientId}
+          onChangeText={(val) => setApiKeys({ ...apiKeys, spotifyClientId: val })}
+          placeholder="Client ID"
+          placeholderTextColor={COLORS.textLight}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
+
+        <Text style={styles.fieldLabel}>Spotify Client Secret</Text>
+        <View style={styles.keyInputRow}>
+          <TextInput
+            style={[styles.keyInput, { flex: 1 }]}
+            value={apiKeys.spotifyClientSecret}
+            onChangeText={(val) => setApiKeys({ ...apiKeys, spotifyClientSecret: val })}
+            placeholder="Client Secret"
+            placeholderTextColor={COLORS.textLight}
+            secureTextEntry={!showSpotifySecret}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+          <TouchableOpacity
+            style={styles.visibilityToggle}
+            onPress={() => setShowSpotifySecret(!showSpotifySecret)}
+          >
+            <Text style={styles.visibilityToggleText}>{showSpotifySecret ? 'Hide' : 'Show'}</Text>
+          </TouchableOpacity>
+        </View>
+
+        <TouchableOpacity
+          style={[styles.exportButton, savingKeys && styles.buttonDisabled]}
+          onPress={async () => {
+            setSavingKeys(true);
+            try {
+              await saveApiKeys(apiKeys);
+              Alert.alert('Saved', 'API keys saved successfully.');
+            } catch (e) {
+              Alert.alert('Error', 'Could not save API keys.');
+            } finally {
+              setSavingKeys(false);
+            }
+          }}
+          disabled={savingKeys}
+        >
+          {savingKeys ? (
+            <ActivityIndicator color={COLORS.white} />
+          ) : (
+            <Text style={styles.exportButtonText}>Save API Keys</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+
       {/* ─── App Info ─── */}
       <Text style={styles.sectionHeader}>About</Text>
       <View style={styles.card}>
@@ -358,6 +450,40 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.6,
+  },
+
+  // ─── API Keys ───
+  fieldLabel: {
+    fontSize: SIZES.sm,
+    fontWeight: '600',
+    color: COLORS.text,
+    marginTop: 12,
+    marginBottom: 6,
+  },
+  keyInput: {
+    borderWidth: 1,
+    borderColor: COLORS.border,
+    borderRadius: SIZES.radiusSm,
+    padding: 10,
+    fontSize: SIZES.md,
+    color: COLORS.text,
+    backgroundColor: COLORS.surfaceAlt,
+    marginBottom: 4,
+  },
+  keyInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  visibilityToggle: {
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  visibilityToggleText: {
+    fontSize: SIZES.sm,
+    fontWeight: '600',
+    color: COLORS.primary,
   },
 
   // ─── App Info ───

@@ -153,17 +153,26 @@ export default function YearCompareScreen({ route }) {
                         <Text style={styles.yearLabel}>
                           {interview.year} (age {interview.age})
                         </Text>
-                        {Object.keys(interview.answers || {}).length === 0 ? (
+                        {interview.transcription?.status === 'processing' ? (
+                          <Text style={styles.answerVideoOnly}>Transcribing...</Text>
+                        ) : !answer?.text && Object.values(interview.answers || {}).every((a) => !a?.text) ? (
                           <Text style={styles.answerVideoOnly}>Video only</Text>
                         ) : (
-                          <Text
-                            style={[
-                              styles.answerText,
-                              !answer && styles.answerEmpty,
-                            ]}
-                          >
-                            {answer || '\u2014'}
-                          </Text>
+                          <View style={styles.answerRow}>
+                            <Text
+                              style={[
+                                styles.answerText,
+                                !answer?.text && styles.answerEmpty,
+                              ]}
+                            >
+                              {answer?.text || '\u2014'}
+                            </Text>
+                            {interview.enrichment?.[question.id]?.emojis && (
+                              <Text style={styles.enrichmentEmojis}>
+                                {interview.enrichment[question.id].emojis.join(' ')}
+                              </Text>
+                            )}
+                          </View>
                         )}
                       </View>
                     </View>
@@ -311,6 +320,15 @@ const styles = StyleSheet.create({
   },
   answerEmpty: {
     color: COLORS.textLight,
+  },
+  answerRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flexWrap: 'wrap',
+  },
+  enrichmentEmojis: {
+    fontSize: SIZES.base,
+    marginLeft: 6,
   },
   answerVideoOnly: {
     fontSize: SIZES.base,

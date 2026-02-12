@@ -15,6 +15,11 @@ export const COLORS = {
   success: '#34D399',
   error: '#EF4444',
   recording: '#EF4444',
+  spotifyGreen: '#1DB954',
+  transcribing: '#6366F1',
+  autoTag: '#94A3B8',
+  editedTag: '#3B82F6',
+  warning: '#F59E0B',
   white: '#FFFFFF',
   black: '#000000',
 };
