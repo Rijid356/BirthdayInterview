@@ -6,15 +6,15 @@ const DEFAULT_QUESTIONS = [
   { id: 'q1', text: 'How old are you today?', category: 'basics' },
 
   // Favorites
-  { id: 'q2', text: "What's your favorite color?", category: 'favorites' },
-  { id: 'q3', text: "What's your favorite food?", category: 'favorites' },
-  { id: 'q4', text: "What's your favorite animal?", category: 'favorites' },
-  { id: 'q5', text: "What's your favorite song or music?", category: 'favorites' },
-  { id: 'q6', text: "What's your favorite book or story?", category: 'favorites' },
-  { id: 'q7', text: "What's your favorite thing to do for fun?", category: 'favorites' },
-  { id: 'q8', text: "What's your favorite movie?", category: 'favorites' },
-  { id: 'q21', text: "What's your favorite TV show?", category: 'favorites' },
-  { id: 'q22', text: "What's your favorite restaurant?", category: 'favorites' },
+  { id: 'q2', text: "What's your favorite color?", category: 'favorites', enrichable: true, enrichmentType: 'color' },
+  { id: 'q3', text: "What's your favorite food?", category: 'favorites', enrichable: true, enrichmentType: 'food' },
+  { id: 'q4', text: "What's your favorite animal?", category: 'favorites', enrichable: true, enrichmentType: 'animal' },
+  { id: 'q5', text: "What's your favorite song or music?", category: 'favorites', enrichable: true, enrichmentType: 'song', spotifySearch: true },
+  { id: 'q6', text: "What's your favorite book or story?", category: 'favorites', enrichable: true, enrichmentType: 'book' },
+  { id: 'q7', text: "What's your favorite thing to do for fun?", category: 'favorites', enrichable: true, enrichmentType: 'activity' },
+  { id: 'q8', text: "What's your favorite movie?", category: 'favorites', enrichable: true, enrichmentType: 'movie' },
+  { id: 'q21', text: "What's your favorite TV show?", category: 'favorites', enrichable: true, enrichmentType: 'tvshow' },
+  { id: 'q22', text: "What's your favorite restaurant?", category: 'favorites', enrichable: true, enrichmentType: 'restaurant' },
 
   // Friends & Family
   { id: 'q9', text: "Who's your best friend?", category: 'people' },

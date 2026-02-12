@@ -155,10 +155,13 @@ export default function InterviewScreen({ route, navigation }) {
         videoUri: storedUri,
         createdAt: new Date().toISOString(),
         questionTimestamps: questionTimestamps.current,
+        transcription: { status: 'pending', rawSegments: null, error: null, completedAt: null },
+        spotify: null,
+        enrichment: {},
       };
 
       await saveInterview(interview);
-      navigation.replace('InterviewReview', { interviewId: interview.id });
+      navigation.replace('InterviewReview', { interviewId: interview.id, autoTranscribe: true });
     } catch (e) {
       console.warn('Save error:', e);
       Alert.alert('Save Error', 'Could not save the interview. Please try again.');

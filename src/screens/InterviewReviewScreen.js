@@ -1,20 +1,100 @@
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
-import { Video, ResizeMode } from 'expo-av';
-import { FileSystem, MediaLibrary, Sharing } from '../utils/native-modules';
+import { Video, ResizeMode, Audio } from 'expo-av';
 import { useFocusEffect } from '@react-navigation/native';
+import { FileSystem, MediaLibrary, Sharing } from '../utils/native-modules';
 import { COLORS, SIZES } from '../utils/theme';
-import { getInterviews, getChildren } from '../utils/storage';
+import { getInterviews, getChildren, updateInterview, getApiKeys } from '../utils/storage';
 import DEFAULT_QUESTIONS, { QUESTION_CATEGORIES } from '../data/questions';
+import TranscriptionBanner from '../components/TranscriptionBanner';
+import EditableAnswer from '../components/EditableAnswer';
+import SpotifyCard from '../components/SpotifyCard';
+import { runTranscriptionPipeline } from '../utils/transcription';
+import { searchSongForInterview } from '../utils/spotify';
+import { enrichInterview } from '../utils/enrichment';
 
-export default function InterviewReviewScreen({ route }) {
-  const { interviewId } = route.params;
+export default function InterviewReviewScreen({ route, navigation }) {
+  const { interviewId, autoTranscribe } = route.params;
   const [interview, setInterview] = useState(null);
   const [child, setChild] = useState(null);
   const [videoExists, setVideoExists] = useState(false);
   const [loading, setLoading] = useState(true);
   const [currentOverlayQuestion, setCurrentOverlayQuestion] = useState(null);
+  const [transcriptionStatus, setTranscriptionStatus] = useState(null);
+  const [transcriptionError, setTranscriptionError] = useState(null);
+  const [apiKeys, setApiKeys] = useState(null);
+  const [spotifyData, setSpotifyData] = useState(null);
+  const [isPlayingPreview, setIsPlayingPreview] = useState(false);
   const videoRef = useRef(null);
+  const soundRef = useRef(null);
+  const transcriptionRanRef = useRef(false);
+
+  // Cleanup audio on unmount
+  useEffect(() => {
+    return () => {
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => {});
+      }
+    };
+  }, []);
+
+  async function reloadInterview() {
+    const interviews = await getInterviews();
+    const found = interviews.find((i) => i.id === interviewId);
+    if (found) {
+      setInterview(found);
+      setTranscriptionStatus(found.transcription?.status || null);
+      setTranscriptionError(found.transcription?.error || null);
+      setSpotifyData(found.spotify || null);
+    }
+    return found;
+  }
+
+  async function runPostTranscription(updatedInterview, keys) {
+    const answers = updatedInterview.answers || {};
+
+    // Spotify search for q5 (favorite song)
+    const q5Answer = answers.q5?.text;
+    if (q5Answer) {
+      const spotifyResult = await searchSongForInterview(q5Answer, keys);
+      if (spotifyResult) {
+        await updateInterview(interviewId, { spotify: spotifyResult });
+      }
+    }
+
+    // Enrichment
+    const enrichment = enrichInterview(answers, DEFAULT_QUESTIONS);
+    if (Object.keys(enrichment).length > 0) {
+      await updateInterview(interviewId, { enrichment });
+    }
+
+    await reloadInterview();
+  }
+
+  async function handleTranscribe(keys) {
+    if (!keys?.openaiKey) {
+      setTranscriptionStatus('no_key');
+      return;
+    }
+
+    setTranscriptionStatus('processing');
+    try {
+      await runTranscriptionPipeline(
+        interviewId,
+        interview.videoUri,
+        interview.questionTimestamps,
+        keys.openaiKey
+      );
+      const updated = await reloadInterview();
+      if (updated) {
+        await runPostTranscription(updated, keys);
+      }
+    } catch (e) {
+      setTranscriptionStatus('failed');
+      setTranscriptionError(e.message);
+      await reloadInterview();
+    }
+  }
 
   useFocusEffect(
     useCallback(() => {
@@ -27,6 +107,9 @@ export default function InterviewReviewScreen({ route }) {
             return;
           }
           setInterview(found);
+          setTranscriptionStatus(found.transcription?.status || null);
+          setTranscriptionError(found.transcription?.error || null);
+          setSpotifyData(found.spotify || null);
 
           const children = await getChildren();
           const matchedChild = children.find((c) => c.id === found.childId);
@@ -40,6 +123,40 @@ export default function InterviewReviewScreen({ route }) {
               setVideoExists(true);
             }
           }
+
+          const keys = await getApiKeys();
+          setApiKeys(keys);
+
+          // Auto-transcribe on first load after recording
+          if (
+            autoTranscribe &&
+            found.transcription?.status === 'pending' &&
+            !transcriptionRanRef.current
+          ) {
+            transcriptionRanRef.current = true;
+            // Defer to avoid blocking initial render
+            setTimeout(() => {
+              setInterview(found); // ensure state is set
+              if (keys?.openaiKey) {
+                setTranscriptionStatus('processing');
+                runTranscriptionPipeline(
+                  interviewId,
+                  found.videoUri,
+                  found.questionTimestamps,
+                  keys.openaiKey
+                ).then(async () => {
+                  const updated = await reloadInterview();
+                  if (updated) await runPostTranscription(updated, keys);
+                }).catch(async (e) => {
+                  setTranscriptionStatus('failed');
+                  setTranscriptionError(e.message);
+                  await reloadInterview();
+                });
+              } else {
+                setTranscriptionStatus('no_key');
+              }
+            }, 500);
+          }
         } catch (e) {
           console.warn('Failed to load interview:', e);
         } finally {
@@ -49,6 +166,65 @@ export default function InterviewReviewScreen({ route }) {
       load();
     }, [interviewId])
   );
+
+  // ─── Answer editing ───
+
+  async function handleAnswerEdit(questionId, newText) {
+    const currentAnswers = { ...(interview.answers || {}) };
+    currentAnswers[questionId] = {
+      text: newText,
+      source: 'edited',
+      editedAt: new Date().toISOString(),
+    };
+    await updateInterview(interviewId, { answers: currentAnswers });
+
+    // Re-run enrichment for this question
+    const enrichment = enrichInterview(currentAnswers, DEFAULT_QUESTIONS);
+    await updateInterview(interviewId, { enrichment });
+
+    // Re-run Spotify if q5 changed
+    const question = DEFAULT_QUESTIONS.find((q) => q.id === questionId);
+    if (question?.spotifySearch && apiKeys) {
+      const spotifyResult = await searchSongForInterview(newText, apiKeys);
+      await updateInterview(interviewId, { spotify: spotifyResult });
+    }
+
+    await reloadInterview();
+  }
+
+  // ─── Audio preview ───
+
+  async function handlePlayPreview() {
+    if (!spotifyData?.previewUrl) return;
+    try {
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+      }
+      const { sound } = await Audio.Sound.createAsync(
+        { uri: spotifyData.previewUrl },
+        { shouldPlay: true }
+      );
+      soundRef.current = sound;
+      setIsPlayingPreview(true);
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.didJustFinish) {
+          setIsPlayingPreview(false);
+        }
+      });
+    } catch (e) {
+      console.warn('Audio preview error:', e);
+      setIsPlayingPreview(false);
+    }
+  }
+
+  async function handleStopPreview() {
+    if (soundRef.current) {
+      await soundRef.current.stopAsync();
+      setIsPlayingPreview(false);
+    }
+  }
+
+  // ─── Render guards ───
 
   if (loading) {
     return (
@@ -119,22 +295,22 @@ export default function InterviewReviewScreen({ route }) {
   }
 
   const interviewQuestions = interview.questions || DEFAULT_QUESTIONS.map((q) => q.id);
-  const hasAnswers = Object.keys(interview.answers || {}).length > 0;
+  const hasAnswers = Object.values(interview.answers || {}).some((a) => a?.text);
+  const answers = interview.answers || {};
+  const enrichmentData = interview.enrichment || {};
 
-  // Group questions (with or without answers) by category
+  // Always show all questions (no backward compat filtering)
   const groupedByCategory = {};
   interviewQuestions.forEach((qId) => {
     const question = questionsById[qId];
     if (!question) return;
-    const answer = interview.answers?.[qId];
-    if (hasAnswers && !answer) return; // For old interviews, only show answered questions
+    const answer = answers[qId] || null;
     if (!groupedByCategory[question.category]) {
       groupedByCategory[question.category] = [];
     }
-    groupedByCategory[question.category].push({ ...question, answer: answer || null });
+    groupedByCategory[question.category].push({ ...question, answer });
   });
 
-  // Maintain category display order
   const categoryOrder = Object.keys(QUESTION_CATEGORIES);
 
   const formattedDate = interview.date
@@ -210,13 +386,22 @@ export default function InterviewReviewScreen({ route }) {
         </View>
       </View>
 
-      {/* Video Interview banner for video-only interviews */}
-      {!hasAnswers && (
-        <View style={styles.videoBanner}>
-          <Text style={styles.videoBannerEmoji}>🎬</Text>
-          <Text style={styles.videoBannerText}>Video Interview</Text>
-          <Text style={styles.videoBannerSub}>Answers are captured in the video above</Text>
-        </View>
+      {/* Transcription Banner */}
+      <TranscriptionBanner
+        status={transcriptionStatus}
+        error={transcriptionError}
+        onRetry={() => handleTranscribe(apiKeys)}
+        onSetup={() => navigation.navigate('Settings')}
+      />
+
+      {/* Spotify Card */}
+      {spotifyData && (
+        <SpotifyCard
+          spotify={spotifyData}
+          isPlaying={isPlayingPreview}
+          onPlay={handlePlayPreview}
+          onStop={handleStopPreview}
+        />
       )}
 
       {/* Q&A by Category */}
@@ -232,9 +417,11 @@ export default function InterviewReviewScreen({ route }) {
             {items.map((item) => (
               <View key={item.id} style={styles.qaCard}>
                 <Text style={styles.questionText}>{item.text}</Text>
-                {item.answer && (
-                  <Text style={styles.answerText}>{item.answer}</Text>
-                )}
+                <EditableAnswer
+                  answer={item.answer}
+                  enrichment={enrichmentData[item.id]}
+                  onSave={(newText) => handleAnswerEdit(item.id, newText)}
+                />
               </View>
             ))}
           </View>
@@ -372,29 +559,6 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
 
-  // Video Interview Banner
-  videoBanner: {
-    backgroundColor: COLORS.primaryFaint,
-    borderRadius: SIZES.radiusLg,
-    padding: SIZES.padding,
-    marginBottom: SIZES.paddingLg,
-    alignItems: 'center',
-  },
-  videoBannerEmoji: {
-    fontSize: 32,
-    marginBottom: 6,
-  },
-  videoBannerText: {
-    fontSize: SIZES.lg,
-    fontWeight: '700',
-    color: COLORS.primary,
-    marginBottom: 4,
-  },
-  videoBannerSub: {
-    fontSize: SIZES.sm,
-    color: COLORS.textSecondary,
-  },
-
   // Categories & Q&A
   categorySection: {
     marginBottom: SIZES.paddingLg,
@@ -420,10 +584,5 @@ const styles = StyleSheet.create({
     fontSize: SIZES.md,
     color: COLORS.textSecondary,
     marginBottom: 6,
-  },
-  answerText: {
-    fontSize: SIZES.base,
-    fontWeight: '700',
-    color: COLORS.text,
   },
 });
