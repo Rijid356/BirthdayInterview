@@ -1,0 +1,13 @@
+diff --git a/node_modules/expo-media-library/android/src/main/java/expo/modules/medialibrary/MediaLibraryUtils.kt b/node_modules/expo-media-library/android/src/main/java/expo/modules/medialibrary/MediaLibraryUtils.kt
+index 804f5d9..44a0cfa 100644
+--- a/node_modules/expo-media-library/android/src/main/java/expo/modules/medialibrary/MediaLibraryUtils.kt
++++ b/node_modules/expo-media-library/android/src/main/java/expo/modules/medialibrary/MediaLibraryUtils.kt
+@@ -220,7 +220,7 @@ object MediaLibraryUtils {
+   }
+ 
+   fun mimeTypeToExternalUri(mimeType: String?): Uri = when {
+-    mimeType == null -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
++    mimeType == null -> EXTERNAL_CONTENT_URI
+     mimeType.contains("image") -> MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+     mimeType.contains("video") -> MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+     mimeType.contains("audio") -> MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
