@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   FlatList,
-  ScrollView,
   Alert,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -14,13 +13,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SIZES } from '../utils/theme';
 import {
   getChildren,
-  getInterviewsForChild,
-  deleteInterview,
-  getBalloonRunsForChild,
-  deleteBalloonRun,
+  getYearSummariesForChild,
   saveProfilePhoto,
   deleteProfilePhoto,
-  getBirthdayMediaForChild,
 } from '../utils/storage';
 
 function calculateAge(birthday) {
@@ -38,35 +33,18 @@ function formatBirthday(birthday) {
   });
 }
 
-function formatInterviewDate(dateStr) {
-  const d = new Date(dateStr);
-  return d.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
-
 export default function ChildProfileScreen({ route, navigation }) {
   const { childId } = route.params;
   const [child, setChild] = useState(null);
-  const [interviews, setInterviews] = useState([]);
-  const [balloonRuns, setBalloonRuns] = useState([]);
-  const [birthdayMedia, setBirthdayMedia] = useState([]);
+  const [yearSummaries, setYearSummaries] = useState([]);
 
   const loadData = useCallback(async () => {
     const allChildren = await getChildren();
     const found = allChildren.find((c) => c.id === childId);
     setChild(found || null);
 
-    const childInterviews = await getInterviewsForChild(childId);
-    setInterviews(childInterviews);
-
-    const childBalloonRuns = await getBalloonRunsForChild(childId);
-    setBalloonRuns(childBalloonRuns);
-
-    const childMedia = await getBirthdayMediaForChild(childId);
-    setBirthdayMedia(childMedia);
+    const summaries = await getYearSummariesForChild(childId);
+    setYearSummaries(summaries);
   }, [childId]);
 
   useFocusEffect(
@@ -110,69 +88,48 @@ export default function ChildProfileScreen({ route, navigation }) {
     }
   };
 
-  const handleDeleteBalloonRun = (run) => {
-    Alert.alert(
-      'Delete Balloon Run',
-      `Are you sure you want to delete the ${run.year} balloon run? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteBalloonRun(run.id);
-            loadData();
-          },
-        },
-      ]
-    );
-  };
+  const hasInterviews = yearSummaries.some((s) => s.hasInterview);
+  const interviewYearCount = yearSummaries.filter((s) => s.hasInterview).length;
 
-  const handleDeleteInterview = (interview) => {
-    Alert.alert(
-      'Delete Interview',
-      `Are you sure you want to delete the ${interview.year} interview? This cannot be undone.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await deleteInterview(interview.id);
-            loadData();
-          },
-        },
-      ]
-    );
-  };
-
-  const renderInterviewCard = ({ item }) => (
+  const renderYearCard = ({ item }) => (
     <TouchableOpacity
-      testID={`interview-card-${item.id}`}
-      style={styles.interviewCard}
+      style={styles.yearCard}
       onPress={() =>
-        navigation.navigate('InterviewReview', { interviewId: item.id })
+        navigation.navigate('YearDetail', {
+          childId: child.id,
+          childName: child.name,
+          year: item.year,
+          age: item.age,
+        })
       }
-      onLongPress={() => handleDeleteInterview(item)}
     >
-      <View style={styles.interviewCardLeft}>
-        <Text style={styles.interviewYear}>{item.year}</Text>
-        <View style={styles.ageBadge}>
-          <Text style={styles.ageBadgeText}>Age {item.age}</Text>
-        </View>
+      <View style={styles.yearCardLeft}>
+        <Text style={styles.yearCardYear}>{item.year}</Text>
+        {item.age != null && (
+          <View style={styles.yearCardAgeBadge}>
+            <Text style={styles.yearCardAgeBadgeText}>Age {item.age}</Text>
+          </View>
+        )}
       </View>
-      <View style={styles.interviewCardCenter}>
-        <Text style={styles.interviewDate}>{formatInterviewDate(item.date)}</Text>
-        <Text style={styles.interviewQuestionCount}>
-          {item.transcription?.status === 'processing'
-            ? 'Transcribing...'
-            : item.transcription?.status === 'failed'
-              ? 'Transcription failed'
-              : (() => {
-                  const count = Object.values(item.answers || {}).filter((a) => a?.text).length;
-                  return count > 0 ? `${count} answers` : 'No answers yet';
-                })()}
-        </Text>
+      <View style={styles.yearCardCenter}>
+        {item.hasInterview && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeIcon}>🎥</Text>
+            <Text style={[styles.badgeText, { color: COLORS.primaryDark }]}>Interview</Text>
+          </View>
+        )}
+        {item.hasBalloonRun && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeIcon}>🎈</Text>
+            <Text style={[styles.badgeText, { color: COLORS.accentDark }]}>Balloon Run</Text>
+          </View>
+        )}
+        {item.mediaCount > 0 && (
+          <View style={styles.badge}>
+            <Text style={styles.badgeIcon}>📸</Text>
+            <Text style={[styles.badgeText, { color: '#4CAF7D' }]}>{item.mediaCount} media</Text>
+          </View>
+        )}
       </View>
       <Text style={styles.chevron}>›</Text>
     </TouchableOpacity>
@@ -230,7 +187,7 @@ export default function ChildProfileScreen({ route, navigation }) {
         </TouchableOpacity>
       </View>
 
-      {interviews.length >= 2 && (
+      {interviewYearCount >= 2 && (
         <View style={styles.actionsSecondary}>
           <TouchableOpacity
             style={styles.secondaryButton}
@@ -245,10 +202,10 @@ export default function ChildProfileScreen({ route, navigation }) {
 
       {/* Section Title */}
       <View style={styles.sectionHeader}>
-        <Text style={styles.sectionTitle}>Interview History</Text>
-        {interviews.length > 0 && (
+        <Text style={styles.sectionTitle}>Years</Text>
+        {yearSummaries.length > 0 && (
           <Text style={styles.sectionCount}>
-            {interviews.length} interview{interviews.length !== 1 ? 's' : ''}
+            {yearSummaries.length} year{yearSummaries.length !== 1 ? 's' : ''}
           </Text>
         )}
       </View>
@@ -266,116 +223,17 @@ export default function ChildProfileScreen({ route, navigation }) {
   return (
     <View style={styles.container}>
       <FlatList
-        data={interviews}
-        keyExtractor={(item) => item.id}
-        renderItem={renderInterviewCard}
+        data={yearSummaries}
+        keyExtractor={(item) => String(item.year)}
+        renderItem={renderYearCard}
         ListHeaderComponent={ListHeader}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={{ fontSize: 48 }}>🎥</Text>
-            <Text style={styles.emptyTitle}>No interviews yet!</Text>
+            <Text style={{ fontSize: 48 }}>🎂</Text>
+            <Text style={styles.emptyTitle}>No memories yet!</Text>
             <Text style={styles.emptyText}>
-              Start your first one to capture this year's memories.
+              Start your first interview or add birthday media to begin.
             </Text>
-          </View>
-        }
-        ListFooterComponent={
-          <View>
-            {/* Balloon Runs Section */}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Balloon Runs</Text>
-              {balloonRuns.length > 0 && (
-                <Text style={styles.sectionCount}>
-                  {balloonRuns.length} run{balloonRuns.length !== 1 ? 's' : ''}
-                </Text>
-              )}
-            </View>
-            {balloonRuns.length === 0 ? (
-              <View style={styles.emptyBalloon}>
-                <Text style={{ fontSize: 36 }}>🎈</Text>
-                <Text style={styles.emptyBalloonText}>
-                  No balloon runs yet. Capture one on their birthday!
-                </Text>
-              </View>
-            ) : (
-              balloonRuns.map((run) => (
-                <TouchableOpacity
-                  key={run.id}
-                  style={styles.balloonRunCard}
-                  onPress={() =>
-                    navigation.navigate('BalloonRunView', { balloonRunId: run.id })
-                  }
-                  onLongPress={() => handleDeleteBalloonRun(run)}
-                >
-                  <View style={styles.balloonRunCardLeft}>
-                    <Text style={styles.balloonRunYear}>{run.year}</Text>
-                    <View style={styles.balloonRunAgeBadge}>
-                      <Text style={styles.balloonRunAgeBadgeText}>Age {run.age}</Text>
-                    </View>
-                  </View>
-                  <View style={styles.interviewCardCenter}>
-                    <Text style={styles.interviewDate}>
-                      {formatInterviewDate(run.createdAt)}
-                    </Text>
-                    <Text style={styles.interviewQuestionCount}>
-                      {run.playbackRate}x slow-mo
-                    </Text>
-                  </View>
-                  <Text style={styles.chevron}>›</Text>
-                </TouchableOpacity>
-              ))
-            )}
-
-            {/* Birthday Media Section */}
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Birthday Media</Text>
-              {birthdayMedia.length > 0 && (
-                <Text style={styles.sectionCount}>
-                  {birthdayMedia.length} item{birthdayMedia.length !== 1 ? 's' : ''}
-                </Text>
-              )}
-            </View>
-            {birthdayMedia.length === 0 ? (
-              <TouchableOpacity
-                style={styles.emptyMedia}
-                onPress={() => navigation.navigate('BirthdayGallery', { childId: child.id })}
-              >
-                <Text style={{ fontSize: 36 }}>📸</Text>
-                <Text style={styles.emptyMediaText}>
-                  Add birthday photos & videos
-                </Text>
-              </TouchableOpacity>
-            ) : (
-              <View>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  contentContainerStyle={styles.mediaStrip}
-                >
-                  {birthdayMedia.slice(0, 8).map((item) => (
-                    <View key={item.id} style={styles.mediaThumb}>
-                      {item.type === 'photo' ? (
-                        <Image
-                          source={{ uri: item.uri }}
-                          style={styles.mediaThumbImage}
-                          resizeMode="cover"
-                        />
-                      ) : (
-                        <View style={styles.mediaThumbVideo}>
-                          <Text style={styles.mediaThumbPlayIcon}>▶</Text>
-                        </View>
-                      )}
-                    </View>
-                  ))}
-                  <TouchableOpacity
-                    style={styles.mediaSeeAll}
-                    onPress={() => navigation.navigate('BirthdayGallery', { childId: child.id })}
-                  >
-                    <Text style={styles.mediaSeeAllText}>See All ›</Text>
-                  </TouchableOpacity>
-                </ScrollView>
-              </View>
-            )}
           </View>
         }
         contentContainerStyle={styles.listContent}
@@ -550,8 +408,8 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
   },
 
-  // Interview Cards
-  interviewCard: {
+  // Year Cards
+  yearCard: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORS.surface,
@@ -565,39 +423,45 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     elevation: 3,
   },
-  interviewCardLeft: {
+  yearCardLeft: {
     alignItems: 'center',
     marginRight: SIZES.padding,
+    minWidth: 52,
   },
-  interviewYear: {
+  yearCardYear: {
     fontSize: SIZES.xl,
     fontWeight: '800',
     color: COLORS.primary,
   },
-  ageBadge: {
+  yearCardAgeBadge: {
     backgroundColor: COLORS.primaryFaint,
     paddingHorizontal: 10,
     paddingVertical: 3,
     borderRadius: SIZES.radiusFull,
     marginTop: 4,
   },
-  ageBadgeText: {
+  yearCardAgeBadgeText: {
     fontSize: SIZES.sm,
     fontWeight: '600',
     color: COLORS.primaryDark,
   },
-  interviewCardCenter: {
+  yearCardCenter: {
     flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
-  interviewDate: {
-    fontSize: SIZES.base,
-    fontWeight: '600',
-    color: COLORS.text,
+  badge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
   },
-  interviewQuestionCount: {
+  badgeIcon: {
+    fontSize: 14,
+  },
+  badgeText: {
     fontSize: SIZES.sm,
-    color: COLORS.textSecondary,
-    marginTop: 2,
+    fontWeight: '600',
   },
   chevron: {
     fontSize: 24,
@@ -624,111 +488,5 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     lineHeight: 24,
-  },
-
-  // Balloon Run Cards
-  balloonRunCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: COLORS.surface,
-    borderRadius: SIZES.radiusLg,
-    padding: SIZES.padding,
-    marginHorizontal: SIZES.padding,
-    marginBottom: SIZES.paddingSm,
-    shadowColor: '#000',
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 3,
-    borderLeftWidth: 3,
-    borderLeftColor: COLORS.accent,
-  },
-  balloonRunCardLeft: {
-    alignItems: 'center',
-    marginRight: SIZES.padding,
-  },
-  balloonRunYear: {
-    fontSize: SIZES.xl,
-    fontWeight: '800',
-    color: COLORS.accentDark,
-  },
-  balloonRunAgeBadge: {
-    backgroundColor: '#FFF3E0',
-    paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: SIZES.radiusFull,
-    marginTop: 4,
-  },
-  balloonRunAgeBadgeText: {
-    fontSize: SIZES.sm,
-    fontWeight: '600',
-    color: COLORS.accentDark,
-  },
-  emptyBalloon: {
-    alignItems: 'center',
-    paddingVertical: 24,
-    paddingHorizontal: SIZES.paddingLg,
-  },
-  emptyBalloonText: {
-    fontSize: SIZES.md,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 20,
-  },
-
-  // Birthday Media
-  emptyMedia: {
-    alignItems: 'center',
-    paddingVertical: 24,
-    paddingHorizontal: SIZES.paddingLg,
-  },
-  emptyMediaText: {
-    fontSize: SIZES.md,
-    color: COLORS.textSecondary,
-    textAlign: 'center',
-    marginTop: 8,
-    lineHeight: 20,
-  },
-  mediaStrip: {
-    paddingHorizontal: SIZES.padding,
-    gap: 8,
-    paddingBottom: SIZES.padding,
-  },
-  mediaThumb: {
-    width: 72,
-    height: 72,
-    borderRadius: SIZES.radiusSm,
-    overflow: 'hidden',
-    backgroundColor: COLORS.surfaceAlt,
-  },
-  mediaThumbImage: {
-    width: 72,
-    height: 72,
-  },
-  mediaThumbVideo: {
-    flex: 1,
-    backgroundColor: '#E8F8F0',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  mediaThumbPlayIcon: {
-    fontSize: 20,
-    color: '#4CAF7D',
-  },
-  mediaSeeAll: {
-    width: 72,
-    height: 72,
-    borderRadius: SIZES.radiusSm,
-    backgroundColor: '#E8F8F0',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: '#7DD3A8',
-  },
-  mediaSeeAllText: {
-    fontSize: SIZES.sm,
-    fontWeight: '700',
-    color: '#4CAF7D',
   },
 });

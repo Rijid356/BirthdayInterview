@@ -192,6 +192,38 @@ export async function deleteBirthdayMediaItem(mediaId) {
   );
 }
 
+// ─── Year Summaries ───
+
+export async function getYearSummariesForChild(childId) {
+  const [interviews, balloonRuns, media] = await Promise.all([
+    getInterviewsForChild(childId),
+    getBalloonRunsForChild(childId),
+    getBirthdayMediaForChild(childId),
+  ]);
+
+  const yearMap = {};
+
+  for (const interview of interviews) {
+    if (!yearMap[interview.year]) yearMap[interview.year] = { year: interview.year, age: null, hasInterview: false, hasBalloonRun: false, mediaCount: 0 };
+    yearMap[interview.year].hasInterview = true;
+    if (interview.age != null) yearMap[interview.year].age = interview.age;
+  }
+
+  for (const run of balloonRuns) {
+    if (!yearMap[run.year]) yearMap[run.year] = { year: run.year, age: null, hasInterview: false, hasBalloonRun: false, mediaCount: 0 };
+    yearMap[run.year].hasBalloonRun = true;
+    if (run.age != null && yearMap[run.year].age == null) yearMap[run.year].age = run.age;
+  }
+
+  for (const item of media) {
+    if (!yearMap[item.year]) yearMap[item.year] = { year: item.year, age: null, hasInterview: false, hasBalloonRun: false, mediaCount: 0 };
+    yearMap[item.year].mediaCount++;
+    if (item.age != null && yearMap[item.year].age == null) yearMap[item.year].age = item.age;
+  }
+
+  return Object.values(yearMap).sort((a, b) => b.year - a.year);
+}
+
 // ─── Video Storage ───
 
 export const VIDEO_DIR = FileSystem
