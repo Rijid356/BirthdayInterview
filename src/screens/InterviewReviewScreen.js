@@ -4,7 +4,7 @@ import { Video, ResizeMode, Audio } from 'expo-av';
 import { useFocusEffect } from '@react-navigation/native';
 import { FileSystem, MediaLibrary, Sharing } from '../utils/native-modules';
 import { COLORS, SIZES } from '../utils/theme';
-import { getInterviews, getChildren, updateInterview, getApiKeys } from '../utils/storage';
+import { getInterviews, getChildren, updateInterview, getApiKeys, copyVideoWithFriendlyName, cleanupTempShareFiles } from '../utils/storage';
 import DEFAULT_QUESTIONS, { QUESTION_CATEGORIES } from '../data/questions';
 import TranscriptionBanner from '../components/TranscriptionBanner';
 import EditableAnswer from '../components/EditableAnswer';
@@ -257,10 +257,16 @@ export default function InterviewReviewScreen({ route, navigation }) {
         Alert.alert('Permission Needed', 'Please allow access to save videos to your camera roll.');
         return;
       }
-      await MediaLibrary.saveToLibraryAsync(interview.videoUri);
+      let videoUri = interview.videoUri;
+      if (child?.name != null && interview.age != null) {
+        videoUri = await copyVideoWithFriendlyName(interview.videoUri, child.name, interview.age);
+      }
+      await MediaLibrary.saveToLibraryAsync(videoUri);
+      await cleanupTempShareFiles();
       Alert.alert('Saved!', 'Video saved to your camera roll.');
     } catch (e) {
       console.warn('Save to library error:', e);
+      await cleanupTempShareFiles();
       Alert.alert('Error', 'Could not save the video.');
     }
   }
@@ -273,9 +279,15 @@ export default function InterviewReviewScreen({ route, navigation }) {
         Alert.alert('Sharing Unavailable', 'Sharing is not available on this device.');
         return;
       }
-      await Sharing.shareAsync(interview.videoUri, { mimeType: 'video/mp4' });
+      let videoUri = interview.videoUri;
+      if (child?.name != null && interview.age != null) {
+        videoUri = await copyVideoWithFriendlyName(interview.videoUri, child.name, interview.age);
+      }
+      await Sharing.shareAsync(videoUri, { mimeType: 'video/mp4' });
+      await cleanupTempShareFiles();
     } catch (e) {
       console.warn('Share error:', e);
+      await cleanupTempShareFiles();
       Alert.alert('Error', 'Could not share the video.');
     }
   }
