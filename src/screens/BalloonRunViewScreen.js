@@ -79,16 +79,15 @@ export default function BalloonRunViewScreen({ route, navigation }) {
   async function handleSaveToCameraRoll() {
     if (!run?.videoUri) return;
     try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Needed', 'Please grant media library access to save videos.');
+      const available = await Sharing.isAvailableAsync();
+      if (!available) {
+        Alert.alert('Sharing Unavailable', 'Sharing is not available on this device.');
         return;
       }
-      await MediaLibrary.createAssetAsync(run.videoUri);
-      Alert.alert('Saved', 'Video saved to your camera roll.');
+      await Sharing.shareAsync(run.videoUri, { mimeType: 'video/mp4', dialogTitle: 'Save Video' });
     } catch (e) {
-      console.warn('Save to camera roll error:', e);
-      Alert.alert('Error', 'Could not save video to camera roll.');
+      console.warn('Save video error:', e);
+      Alert.alert('Error', `Could not save the video.\n\n${e.message || 'Unknown error'}`);
     }
   }
 
@@ -180,7 +179,7 @@ export default function BalloonRunViewScreen({ route, navigation }) {
       {/* Action Buttons */}
       <View style={styles.actionRow}>
         <TouchableOpacity style={styles.actionButton} onPress={handleSaveToCameraRoll}>
-          <Text style={styles.actionButtonText}>Save to Camera Roll</Text>
+          <Text style={styles.actionButtonText}>Save Video</Text>
         </TouchableOpacity>
         <TouchableOpacity style={styles.actionButton} onPress={handleShare}>
           <Text style={styles.actionButtonText}>Share</Text>

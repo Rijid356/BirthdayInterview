@@ -250,11 +250,15 @@ export default function InterviewReviewScreen({ route, navigation }) {
   });
 
   async function handleSaveToLibrary() {
-    if (!MediaLibrary) return;
+    // expo-media-library has a bug on Android where both saveToLibraryAsync and
+    // createAssetAsync insert into MediaStore.Images instead of MediaStore.Video,
+    // rejecting video/mp4. Use Sharing as a reliable alternative — the Android
+    // share sheet lets users save to Files, Gallery, Google Drive, etc.
+    if (!Sharing) return;
     try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Needed', 'Please allow access to save videos to your camera roll.');
+      const available = await Sharing.isAvailableAsync();
+      if (!available) {
+        Alert.alert('Sharing Unavailable', 'Sharing is not available on this device.');
         return;
       }
 
@@ -272,16 +276,12 @@ export default function InterviewReviewScreen({ route, navigation }) {
         try {
           videoUri = await copyVideoWithFriendlyName(interview.videoUri, child.name, interview.age);
         } catch (copyErr) {
-          // Friendly-name copy failed — fall back to original URI
           console.warn('Friendly name copy failed, using original:', copyErr);
           videoUri = interview.videoUri;
         }
       }
-      // Use createAssetAsync instead of saveToLibraryAsync — the latter
-      // tries to insert into the images collection on Android which rejects video/mp4.
-      await MediaLibrary.createAssetAsync(videoUri);
-      await cleanupTempShareFiles();
-      Alert.alert('Saved!', 'Video saved to your camera roll.');
+      await Sharing.shareAsync(videoUri, { mimeType: 'video/mp4', dialogTitle: 'Save Interview Video' });
+      await cleanupTempShareFiles().catch(() => {});
     } catch (e) {
       console.warn('Save to library error:', e);
       await cleanupTempShareFiles().catch(() => {});
@@ -401,7 +401,7 @@ export default function InterviewReviewScreen({ route, navigation }) {
       {interview.videoUri && videoExists && (
         <View style={styles.videoActions}>
           <TouchableOpacity testID="button-save-video" style={styles.actionButton} onPress={handleSaveToLibrary}>
-            <Text style={styles.actionButtonText}>Save to Camera Roll</Text>
+            <Text style={styles.actionButtonText}>Save Video</Text>
           </TouchableOpacity>
           <TouchableOpacity testID="button-share-video" style={styles.actionButton} onPress={handleShare}>
             <Text style={styles.actionButtonText}>Share</Text>
