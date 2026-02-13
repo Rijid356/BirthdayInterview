@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { FileSystem } from './native-modules';
+import JSZip from 'jszip';
 
 const CHILDREN_KEY = '@birthday_interview_children';
 const INTERVIEWS_KEY = '@birthday_interview_sessions';
@@ -22,7 +23,16 @@ export async function saveChild(child) {
 }
 
 export async function deleteChild(childId) {
-  const children = await getChildren();
+  // Delete profile photo if exists
+  const allChildren = await getChildren();
+  const targetChild = allChildren.find((c) => c.id === childId);
+  if (targetChild?.photoUri && FileSystem) {
+    try {
+      const photoInfo = await FileSystem.getInfoAsync(targetChild.photoUri);
+      if (photoInfo.exists) await FileSystem.deleteAsync(targetChild.photoUri);
+    } catch (e) { console.warn('Could not delete profile photo:', e); }
+  }
+  const children = allChildren;
   await AsyncStorage.setItem(
     CHILDREN_KEY,
     JSON.stringify(children.filter((c) => c.id !== childId))
@@ -202,6 +212,45 @@ export async function cleanupTempShareFiles() {
   }
 }
 
+// ─── Profile Photos ───
+
+export const PROFILE_PHOTO_DIR = FileSystem
+  ? `${FileSystem.documentDirectory}profile-photos/`
+  : '';
+
+export async function saveProfilePhoto(childId, pickedUri) {
+  if (!FileSystem) throw new Error('File system not available on this platform');
+  const info = await FileSystem.getInfoAsync(PROFILE_PHOTO_DIR);
+  if (!info.exists) await FileSystem.makeDirectoryAsync(PROFILE_PHOTO_DIR, { intermediates: true });
+  const dest = `${PROFILE_PHOTO_DIR}profile_${childId}.jpg`;
+  await FileSystem.copyAsync({ from: pickedUri, to: dest });
+  // Update child record with photoUri
+  const children = await getChildren();
+  const idx = children.findIndex((c) => c.id === childId);
+  if (idx >= 0) {
+    children[idx] = { ...children[idx], photoUri: dest };
+    await AsyncStorage.setItem(CHILDREN_KEY, JSON.stringify(children));
+  }
+  return dest;
+}
+
+export async function deleteProfilePhoto(childId) {
+  if (!FileSystem) return;
+  const dest = `${PROFILE_PHOTO_DIR}profile_${childId}.jpg`;
+  try {
+    const info = await FileSystem.getInfoAsync(dest);
+    if (info.exists) await FileSystem.deleteAsync(dest);
+  } catch (e) { console.warn('Could not delete profile photo:', e); }
+  // Remove photoUri from child record
+  const children = await getChildren();
+  const idx = children.findIndex((c) => c.id === childId);
+  if (idx >= 0) {
+    const { photoUri, ...rest } = children[idx];
+    children[idx] = rest;
+    await AsyncStorage.setItem(CHILDREN_KEY, JSON.stringify(children));
+  }
+}
+
 // ─── Backup ───
 
 export async function exportAllData() {
@@ -217,4 +266,190 @@ export async function importData(data) {
   if (data.children) await AsyncStorage.setItem(CHILDREN_KEY, JSON.stringify(data.children));
   if (data.interviews) await AsyncStorage.setItem(INTERVIEWS_KEY, JSON.stringify(data.interviews));
   if (data.balloonRuns) await AsyncStorage.setItem(BALLOON_RUNS_KEY, JSON.stringify(data.balloonRuns));
+}
+
+// ─── Full Backup (with media) ───
+
+export async function getMediaManifest() {
+  if (!FileSystem) return [];
+  const manifest = [];
+
+  const interviews = await getInterviews();
+  for (const interview of interviews) {
+    if (interview.videoUri) {
+      try {
+        const info = await FileSystem.getInfoAsync(interview.videoUri);
+        if (info.exists) {
+          const filename = interview.videoUri.split('/').pop();
+          manifest.push({ type: 'interview', relativePath: `media/${filename}`, absoluteUri: interview.videoUri });
+        }
+      } catch (e) { console.warn('Manifest scan skip:', e); }
+    }
+  }
+
+  const balloonRuns = await getBalloonRuns();
+  for (const run of balloonRuns) {
+    if (run.videoUri) {
+      try {
+        const info = await FileSystem.getInfoAsync(run.videoUri);
+        if (info.exists) {
+          const filename = run.videoUri.split('/').pop();
+          manifest.push({ type: 'balloon', relativePath: `media/${filename}`, absoluteUri: run.videoUri });
+        }
+      } catch (e) { console.warn('Manifest scan skip:', e); }
+    }
+  }
+
+  const children = await getChildren();
+  for (const child of children) {
+    if (child.photoUri) {
+      try {
+        const info = await FileSystem.getInfoAsync(child.photoUri);
+        if (info.exists) {
+          const filename = child.photoUri.split('/').pop();
+          manifest.push({ type: 'profile', relativePath: `media/${filename}`, absoluteUri: child.photoUri });
+        }
+      } catch (e) { console.warn('Manifest scan skip:', e); }
+    }
+  }
+
+  return manifest;
+}
+
+export async function exportFullBackup(onProgress) {
+  if (!FileSystem) throw new Error('File system not available on this platform');
+
+  const metadata = await exportAllData();
+  const manifest = await getMediaManifest();
+
+  const zip = new JSZip();
+  zip.file('metadata.json', JSON.stringify({ ...metadata, manifest }, null, 2));
+
+  for (let i = 0; i < manifest.length; i++) {
+    const entry = manifest[i];
+    const filename = entry.relativePath.split('/').pop();
+    if (onProgress) onProgress(i + 1, manifest.length, filename);
+    try {
+      const base64 = await FileSystem.readAsStringAsync(entry.absoluteUri, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      zip.file(entry.relativePath, base64, { base64: true });
+    } catch (e) {
+      console.warn(`Could not read ${filename}, skipping:`, e);
+    }
+  }
+
+  const zipBase64 = await zip.generateAsync({ type: 'base64' });
+  const zipUri = FileSystem.documentDirectory + 'berfdayy-full-backup.zip';
+  await FileSystem.writeAsStringAsync(zipUri, zipBase64, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+
+  return zipUri;
+}
+
+export async function importFullBackup(zipUri, onProgress) {
+  if (!FileSystem) throw new Error('File system not available on this platform');
+
+  const zipBase64 = await FileSystem.readAsStringAsync(zipUri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  const zip = await JSZip.loadAsync(zipBase64, { base64: true });
+
+  const metadataFile = zip.file('metadata.json');
+  if (!metadataFile) throw new Error('Invalid backup: missing metadata.json');
+  const metadataStr = await metadataFile.async('string');
+  const metadata = JSON.parse(metadataStr);
+
+  const { manifest = [], ...data } = metadata;
+
+  // Ensure directories exist
+  const dirs = [VIDEO_DIR, BALLOON_VIDEO_DIR, `${FileSystem.documentDirectory}profile-photos/`];
+  for (const dir of dirs) {
+    const info = await FileSystem.getInfoAsync(dir);
+    if (!info.exists) await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+  }
+
+  // Map old paths to new local paths
+  const pathMap = {};
+
+  for (let i = 0; i < manifest.length; i++) {
+    const entry = manifest[i];
+    const filename = entry.relativePath.split('/').pop();
+    if (onProgress) onProgress(i + 1, manifest.length, filename);
+
+    const zipFile = zip.file(entry.relativePath);
+    if (!zipFile) continue;
+
+    try {
+      const base64 = await zipFile.async('base64');
+      let destDir;
+      if (entry.type === 'interview') destDir = VIDEO_DIR;
+      else if (entry.type === 'balloon') destDir = BALLOON_VIDEO_DIR;
+      else if (entry.type === 'profile') destDir = `${FileSystem.documentDirectory}profile-photos/`;
+      else continue;
+
+      const destPath = destDir + filename;
+      await FileSystem.writeAsStringAsync(destPath, base64, {
+        encoding: FileSystem.EncodingType.Base64,
+      });
+      pathMap[entry.absoluteUri] = destPath;
+    } catch (e) {
+      console.warn(`Could not restore ${filename}:`, e);
+    }
+  }
+
+  // Remap URIs in metadata
+  if (data.interviews) {
+    for (const interview of data.interviews) {
+      if (interview.videoUri && pathMap[interview.videoUri]) {
+        interview.videoUri = pathMap[interview.videoUri];
+      }
+    }
+  }
+  if (data.balloonRuns) {
+    for (const run of data.balloonRuns) {
+      if (run.videoUri && pathMap[run.videoUri]) {
+        run.videoUri = pathMap[run.videoUri];
+      }
+    }
+  }
+  if (data.children) {
+    for (const child of data.children) {
+      if (child.photoUri && pathMap[child.photoUri]) {
+        child.photoUri = pathMap[child.photoUri];
+      }
+    }
+  }
+
+  await importData(data);
+
+  return {
+    children: data.children?.length || 0,
+    interviews: data.interviews?.length || 0,
+    balloonRuns: data.balloonRuns?.length || 0,
+    mediaFiles: Object.keys(pathMap).length,
+  };
+}
+
+export async function getBackupSizeEstimate() {
+  if (!FileSystem) return 0;
+  let totalSize = 0;
+
+  const directories = [VIDEO_DIR, BALLOON_VIDEO_DIR, `${FileSystem.documentDirectory}profile-photos/`];
+  for (const dir of directories) {
+    try {
+      const info = await FileSystem.getInfoAsync(dir);
+      if (!info.exists) continue;
+      const files = await FileSystem.readDirectoryAsync(dir);
+      for (const file of files) {
+        try {
+          const fileInfo = await FileSystem.getInfoAsync(dir + file);
+          if (fileInfo.exists && fileInfo.size) totalSize += fileInfo.size;
+        } catch (e) { /* skip */ }
+      }
+    } catch (e) { /* skip */ }
+  }
+
+  return totalSize;
 }

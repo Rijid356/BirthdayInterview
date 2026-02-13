@@ -12,12 +12,16 @@ import {
 import { useFocusEffect } from '@react-navigation/native';
 import { FileSystem, Sharing } from '../utils/native-modules';
 import { COLORS, SIZES } from '../utils/theme';
+import * as DocumentPicker from 'expo-document-picker';
 import {
   getChildren,
   getInterviews,
   getBalloonRuns,
   exportAllData,
   importData,
+  exportFullBackup,
+  importFullBackup,
+  getBackupSizeEstimate,
   getApiKeys,
   saveApiKeys,
 } from '../utils/storage';
@@ -30,6 +34,9 @@ export default function SettingsScreen() {
   const [importing, setImporting] = useState(false);
   const [importText, setImportText] = useState('');
   const [showImport, setShowImport] = useState(false);
+  const [backupProgress, setBackupProgress] = useState(null);
+  const [importProgress, setImportProgress] = useState(null);
+  const [backupSize, setBackupSize] = useState(null);
   const [apiKeys, setApiKeys] = useState({ openaiKey: '', spotifyClientId: '', spotifyClientSecret: '' });
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
   const [showSpotifySecret, setShowSpotifySecret] = useState(false);
@@ -44,6 +51,8 @@ export default function SettingsScreen() {
         setChildCount(children.length);
         setInterviewCount(interviews.length);
         setBalloonRunCount(balloonRuns.length);
+        const size = await getBackupSizeEstimate();
+        setBackupSize(size);
       }
       async function loadKeys() {
         const keys = await getApiKeys();
@@ -73,6 +82,108 @@ export default function SettingsScreen() {
       Alert.alert('Export Failed', e.message || 'Something went wrong.');
     } finally {
       setExporting(false);
+    }
+  }
+
+  function formatBytes(bytes) {
+    if (bytes === 0) return '0 B';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+  }
+
+  async function handleFullBackup() {
+    if (!FileSystem || !Sharing) {
+      Alert.alert('Not Available', 'Full backup is not available on web.');
+      return;
+    }
+    setBackupProgress({ current: 0, total: 0, filename: 'Preparing...' });
+    try {
+      const zipUri = await exportFullBackup((current, total, filename) => {
+        setBackupProgress({ current, total, filename });
+      });
+      setBackupProgress(null);
+      await Sharing.shareAsync(zipUri, {
+        mimeType: 'application/zip',
+        dialogTitle: 'Export Full Backup',
+      });
+    } catch (e) {
+      Alert.alert('Backup Failed', e.message || 'Something went wrong.');
+    } finally {
+      setBackupProgress(null);
+    }
+  }
+
+  async function handleImportFromFile() {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/json', 'application/zip', 'application/octet-stream'],
+        copyToCacheDirectory: true,
+      });
+
+      if (result.canceled) return;
+
+      const file = result.assets?.[0];
+      if (!file) return;
+
+      setImporting(true);
+      const uri = file.uri;
+      const name = file.name || '';
+
+      if (name.endsWith('.zip')) {
+        setImportProgress({ current: 0, total: 0, filename: 'Reading backup...' });
+        const summary = await importFullBackup(uri, (current, total, filename) => {
+          setImportProgress({ current, total, filename });
+        });
+        setImportProgress(null);
+
+        const children = await getChildren();
+        const interviews = await getInterviews();
+        const balloonRuns = await getBalloonRuns();
+        setChildCount(children.length);
+        setInterviewCount(interviews.length);
+        setBalloonRunCount(balloonRuns.length);
+        const size = await getBackupSizeEstimate();
+        setBackupSize(size);
+
+        Alert.alert(
+          'Import Successful',
+          `Restored ${summary.children} children, ${summary.interviews} interviews, ${summary.balloonRuns} balloon runs, and ${summary.mediaFiles} media files.`
+        );
+      } else {
+        if (!FileSystem) {
+          Alert.alert('Not Available', 'File import is not available on web.');
+          return;
+        }
+        const content = await FileSystem.readAsStringAsync(uri);
+        const data = JSON.parse(content);
+
+        if (!data.children && !data.interviews && !data.balloonRuns) {
+          Alert.alert('Invalid Data', 'The file does not contain valid backup data.');
+          return;
+        }
+
+        await importData(data);
+
+        const children = await getChildren();
+        const interviews = await getInterviews();
+        const balloonRuns = await getBalloonRuns();
+        setChildCount(children.length);
+        setInterviewCount(interviews.length);
+        setBalloonRunCount(balloonRuns.length);
+
+        Alert.alert(
+          'Import Successful',
+          `Imported ${children.length} children, ${interviews.length} interviews, and ${balloonRuns.length} balloon runs.`
+        );
+      }
+    } catch (e) {
+      setImportProgress(null);
+      Alert.alert('Import Failed', e.message || 'Could not import backup file.');
+    } finally {
+      setImporting(false);
+      setImportProgress(null);
     }
   }
 
@@ -141,24 +252,53 @@ export default function SettingsScreen() {
           <Text style={styles.statLabel}>Balloon Runs</Text>
           <Text style={styles.statValue}>{balloonRunCount}</Text>
         </View>
+        <View style={styles.divider} />
+        <View style={styles.statRow}>
+          <Text style={styles.statEmoji}>💾</Text>
+          <Text style={styles.statLabel}>Media Size</Text>
+          <Text style={styles.statValue}>{formatBytes(backupSize || 0)}</Text>
+        </View>
       </View>
 
       {/* ─── Export ─── */}
       <Text style={styles.sectionHeader}>Export</Text>
       <View style={styles.card}>
         <Text style={styles.cardDescription}>
-          Export all children and interview data as a JSON file. Video files are
-          not included in the backup.
+          Export your data as JSON (metadata only) or as a full backup including all videos and photos.
         </Text>
+        {backupSize > 500 * 1024 * 1024 && (
+          <Text style={styles.warningText}>
+            Your media files total {formatBytes(backupSize)}. Full backup may take a while and use significant memory. Consider data-only export for large collections.
+          </Text>
+        )}
+        {backupProgress && (
+          <View style={styles.progressContainer}>
+            <ActivityIndicator color={COLORS.primary} />
+            <Text style={styles.progressText}>
+              Processing file {backupProgress.current} of {backupProgress.total}: {backupProgress.filename}
+            </Text>
+          </View>
+        )}
         <TouchableOpacity
           style={[styles.exportButton, exporting && styles.buttonDisabled]}
           onPress={handleExport}
-          disabled={exporting}
+          disabled={exporting || !!backupProgress}
         >
           {exporting ? (
             <ActivityIndicator color={COLORS.white} />
           ) : (
-            <Text style={styles.exportButtonText}>Export Data</Text>
+            <Text style={styles.exportButtonText}>Export Data Only (JSON)</Text>
+          )}
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.fullBackupButton, !!backupProgress && styles.buttonDisabled]}
+          onPress={handleFullBackup}
+          disabled={exporting || !!backupProgress}
+        >
+          {backupProgress ? (
+            <ActivityIndicator color={COLORS.white} />
+          ) : (
+            <Text style={styles.exportButtonText}>Full Backup (with Videos)</Text>
           )}
         </TouchableOpacity>
       </View>
@@ -167,16 +307,36 @@ export default function SettingsScreen() {
       <Text style={styles.sectionHeader}>Import</Text>
       <View style={styles.card}>
         <Text style={styles.cardDescription}>
-          Restore data from a previous backup by pasting the JSON content below.
-          This will merge with any existing data.
+          Restore data from a backup file (.zip for full backup or .json for data only). You can also paste JSON directly.
         </Text>
+
+        {importProgress && (
+          <View style={styles.progressContainer}>
+            <ActivityIndicator color={COLORS.accent} />
+            <Text style={styles.progressText}>
+              Restoring file {importProgress.current} of {importProgress.total}: {importProgress.filename}
+            </Text>
+          </View>
+        )}
+
+        <TouchableOpacity
+          style={[styles.importFileButton, importing && styles.buttonDisabled]}
+          onPress={handleImportFromFile}
+          disabled={importing}
+        >
+          {importing && !showImport ? (
+            <ActivityIndicator color={COLORS.white} />
+          ) : (
+            <Text style={styles.importFileButtonText}>Import from File</Text>
+          )}
+        </TouchableOpacity>
 
         {!showImport ? (
           <TouchableOpacity
             style={styles.importToggle}
             onPress={() => setShowImport(true)}
           >
-            <Text style={styles.importToggleText}>Paste Backup Data</Text>
+            <Text style={styles.importToggleText}>Or Paste JSON</Text>
           </TouchableOpacity>
         ) : (
           <View style={styles.importArea}>
@@ -384,13 +544,55 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: 'center',
   },
+  fullBackupButton: {
+    backgroundColor: COLORS.accent,
+    borderRadius: SIZES.radius,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 8,
+  },
   exportButtonText: {
     color: COLORS.white,
     fontSize: SIZES.base,
     fontWeight: '700',
   },
+  progressContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: COLORS.surfaceAlt,
+    borderRadius: SIZES.radius,
+    padding: 12,
+    marginBottom: 12,
+    gap: 10,
+  },
+  progressText: {
+    flex: 1,
+    fontSize: SIZES.sm,
+    color: COLORS.textSecondary,
+  },
+  warningText: {
+    fontSize: SIZES.sm,
+    color: COLORS.accentDark,
+    backgroundColor: '#FFF3E0',
+    borderRadius: SIZES.radiusSm,
+    padding: 10,
+    marginBottom: 12,
+    lineHeight: 18,
+  },
 
   // ─── Import ───
+  importFileButton: {
+    backgroundColor: COLORS.accent,
+    borderRadius: SIZES.radius,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  importFileButtonText: {
+    color: COLORS.white,
+    fontSize: SIZES.base,
+    fontWeight: '700',
+  },
   importToggle: {
     borderWidth: 1.5,
     borderColor: COLORS.border,
