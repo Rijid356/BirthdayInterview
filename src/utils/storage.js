@@ -5,6 +5,7 @@ import JSZip from 'jszip';
 const CHILDREN_KEY = '@birthday_interview_children';
 const INTERVIEWS_KEY = '@birthday_interview_sessions';
 const BALLOON_RUNS_KEY = '@git-bigger_balloon_runs';
+const BIRTHDAY_MEDIA_KEY = '@git-bigger_birthday_media';
 
 // ─── Children ───
 
@@ -57,6 +58,21 @@ export async function deleteChild(childId) {
   await AsyncStorage.setItem(
     BALLOON_RUNS_KEY,
     JSON.stringify(balloonRuns.filter((r) => r.childId !== childId))
+  );
+  // Also remove their birthday media + files
+  const allMedia = await getBirthdayMedia();
+  const childMedia = allMedia.filter((m) => m.childId === childId);
+  for (const item of childMedia) {
+    if (item.uri && FileSystem) {
+      try {
+        const info = await FileSystem.getInfoAsync(item.uri);
+        if (info.exists) await FileSystem.deleteAsync(item.uri);
+      } catch (e) { console.warn('Could not delete birthday media file:', e); }
+    }
+  }
+  await AsyncStorage.setItem(
+    BIRTHDAY_MEDIA_KEY,
+    JSON.stringify(allMedia.filter((m) => m.childId !== childId))
   );
 }
 
@@ -142,6 +158,40 @@ export async function deleteBalloonRun(runId) {
   );
 }
 
+// ─── Birthday Media ───
+
+export async function getBirthdayMedia() {
+  const json = await AsyncStorage.getItem(BIRTHDAY_MEDIA_KEY);
+  return json ? JSON.parse(json) : [];
+}
+
+export async function getBirthdayMediaForChild(childId) {
+  const all = await getBirthdayMedia();
+  return all.filter((m) => m.childId === childId).sort((a, b) => b.year - a.year);
+}
+
+export async function saveBirthdayMediaItems(items) {
+  const existing = await getBirthdayMedia();
+  const updated = [...existing, ...items];
+  await AsyncStorage.setItem(BIRTHDAY_MEDIA_KEY, JSON.stringify(updated));
+  return updated;
+}
+
+export async function deleteBirthdayMediaItem(mediaId) {
+  const items = await getBirthdayMedia();
+  const target = items.find((m) => m.id === mediaId);
+  if (target?.uri && FileSystem) {
+    try {
+      const info = await FileSystem.getInfoAsync(target.uri);
+      if (info.exists) await FileSystem.deleteAsync(target.uri);
+    } catch (e) { console.warn('Could not delete birthday media file:', e); }
+  }
+  await AsyncStorage.setItem(
+    BIRTHDAY_MEDIA_KEY,
+    JSON.stringify(items.filter((m) => m.id !== mediaId))
+  );
+}
+
 // ─── Video Storage ───
 
 export const VIDEO_DIR = FileSystem
@@ -166,6 +216,19 @@ export async function moveVideoToBalloonStorage(tempUri, filename) {
   if (!info.exists) await FileSystem.makeDirectoryAsync(BALLOON_VIDEO_DIR, { intermediates: true });
   const dest = `${BALLOON_VIDEO_DIR}${filename}`;
   await FileSystem.moveAsync({ from: tempUri, to: dest });
+  return dest;
+}
+
+export const BIRTHDAY_MEDIA_DIR = FileSystem
+  ? `${FileSystem.documentDirectory}birthday-media/`
+  : '';
+
+export async function moveToBirthdayMediaStorage(tempUri, filename) {
+  if (!FileSystem) throw new Error('File system not available on this platform');
+  const info = await FileSystem.getInfoAsync(BIRTHDAY_MEDIA_DIR);
+  if (!info.exists) await FileSystem.makeDirectoryAsync(BIRTHDAY_MEDIA_DIR, { intermediates: true });
+  const dest = `${BIRTHDAY_MEDIA_DIR}${filename}`;
+  await FileSystem.copyAsync({ from: tempUri, to: dest });
   return dest;
 }
 
@@ -259,6 +322,7 @@ export async function exportAllData() {
     children: await getChildren(),
     interviews: await getInterviews(),
     balloonRuns: await getBalloonRuns(),
+    birthdayMedia: await getBirthdayMedia(),
   };
 }
 
@@ -266,6 +330,7 @@ export async function importData(data) {
   if (data.children) await AsyncStorage.setItem(CHILDREN_KEY, JSON.stringify(data.children));
   if (data.interviews) await AsyncStorage.setItem(INTERVIEWS_KEY, JSON.stringify(data.interviews));
   if (data.balloonRuns) await AsyncStorage.setItem(BALLOON_RUNS_KEY, JSON.stringify(data.balloonRuns));
+  if (data.birthdayMedia) await AsyncStorage.setItem(BIRTHDAY_MEDIA_KEY, JSON.stringify(data.birthdayMedia));
 }
 
 // ─── Full Backup (with media) ───
@@ -308,6 +373,19 @@ export async function getMediaManifest() {
         if (info.exists) {
           const filename = child.photoUri.split('/').pop();
           manifest.push({ type: 'profile', relativePath: `media/${filename}`, absoluteUri: child.photoUri });
+        }
+      } catch (e) { console.warn('Manifest scan skip:', e); }
+    }
+  }
+
+  const birthdayMedia = await getBirthdayMedia();
+  for (const item of birthdayMedia) {
+    if (item.uri) {
+      try {
+        const info = await FileSystem.getInfoAsync(item.uri);
+        if (info.exists) {
+          const filename = item.uri.split('/').pop();
+          manifest.push({ type: 'birthday-media', relativePath: `media/${filename}`, absoluteUri: item.uri });
         }
       } catch (e) { console.warn('Manifest scan skip:', e); }
     }
@@ -364,7 +442,7 @@ export async function importFullBackup(zipUri, onProgress) {
   const { manifest = [], ...data } = metadata;
 
   // Ensure directories exist
-  const dirs = [VIDEO_DIR, BALLOON_VIDEO_DIR, `${FileSystem.documentDirectory}profile-photos/`];
+  const dirs = [VIDEO_DIR, BALLOON_VIDEO_DIR, `${FileSystem.documentDirectory}profile-photos/`, BIRTHDAY_MEDIA_DIR];
   for (const dir of dirs) {
     const info = await FileSystem.getInfoAsync(dir);
     if (!info.exists) await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
@@ -387,6 +465,7 @@ export async function importFullBackup(zipUri, onProgress) {
       if (entry.type === 'interview') destDir = VIDEO_DIR;
       else if (entry.type === 'balloon') destDir = BALLOON_VIDEO_DIR;
       else if (entry.type === 'profile') destDir = `${FileSystem.documentDirectory}profile-photos/`;
+      else if (entry.type === 'birthday-media') destDir = BIRTHDAY_MEDIA_DIR;
       else continue;
 
       const destPath = destDir + filename;
@@ -421,6 +500,13 @@ export async function importFullBackup(zipUri, onProgress) {
       }
     }
   }
+  if (data.birthdayMedia) {
+    for (const item of data.birthdayMedia) {
+      if (item.uri && pathMap[item.uri]) {
+        item.uri = pathMap[item.uri];
+      }
+    }
+  }
 
   await importData(data);
 
@@ -428,6 +514,7 @@ export async function importFullBackup(zipUri, onProgress) {
     children: data.children?.length || 0,
     interviews: data.interviews?.length || 0,
     balloonRuns: data.balloonRuns?.length || 0,
+    birthdayMedia: data.birthdayMedia?.length || 0,
     mediaFiles: Object.keys(pathMap).length,
   };
 }
@@ -436,7 +523,7 @@ export async function getBackupSizeEstimate() {
   if (!FileSystem) return 0;
   let totalSize = 0;
 
-  const directories = [VIDEO_DIR, BALLOON_VIDEO_DIR, `${FileSystem.documentDirectory}profile-photos/`];
+  const directories = [VIDEO_DIR, BALLOON_VIDEO_DIR, `${FileSystem.documentDirectory}profile-photos/`, BIRTHDAY_MEDIA_DIR];
   for (const dir of directories) {
     try {
       const info = await FileSystem.getInfoAsync(dir);

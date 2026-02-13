@@ -17,6 +17,7 @@ import {
   getChildren,
   getInterviews,
   getBalloonRuns,
+  getBirthdayMedia,
   exportAllData,
   importData,
   exportFullBackup,
@@ -30,6 +31,7 @@ export default function SettingsScreen() {
   const [childCount, setChildCount] = useState(0);
   const [interviewCount, setInterviewCount] = useState(0);
   const [balloonRunCount, setBalloonRunCount] = useState(0);
+  const [birthdayMediaCount, setBirthdayMediaCount] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importText, setImportText] = useState('');
@@ -48,9 +50,11 @@ export default function SettingsScreen() {
         const children = await getChildren();
         const interviews = await getInterviews();
         const balloonRuns = await getBalloonRuns();
+        const media = await getBirthdayMedia();
         setChildCount(children.length);
         setInterviewCount(interviews.length);
         setBalloonRunCount(balloonRuns.length);
+        setBirthdayMediaCount(media.length);
         const size = await getBackupSizeEstimate();
         setBackupSize(size);
       }
@@ -251,6 +255,12 @@ export default function SettingsScreen() {
           <Text style={styles.statEmoji}>🎈</Text>
           <Text style={styles.statLabel}>Balloon Runs</Text>
           <Text style={styles.statValue}>{balloonRunCount}</Text>
+        </View>
+        <View style={styles.divider} />
+        <View style={styles.statRow}>
+          <Text style={styles.statEmoji}>📸</Text>
+          <Text style={styles.statLabel}>Birthday Media</Text>
+          <Text style={styles.statValue}>{birthdayMediaCount}</Text>
         </View>
         <View style={styles.divider} />
         <View style={styles.statRow}>

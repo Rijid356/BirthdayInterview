@@ -6,6 +6,7 @@ import {
   StyleSheet,
   TouchableOpacity,
   FlatList,
+  ScrollView,
   Alert,
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
@@ -19,6 +20,7 @@ import {
   deleteBalloonRun,
   saveProfilePhoto,
   deleteProfilePhoto,
+  getBirthdayMediaForChild,
 } from '../utils/storage';
 
 function calculateAge(birthday) {
@@ -50,6 +52,7 @@ export default function ChildProfileScreen({ route, navigation }) {
   const [child, setChild] = useState(null);
   const [interviews, setInterviews] = useState([]);
   const [balloonRuns, setBalloonRuns] = useState([]);
+  const [birthdayMedia, setBirthdayMedia] = useState([]);
 
   const loadData = useCallback(async () => {
     const allChildren = await getChildren();
@@ -61,6 +64,9 @@ export default function ChildProfileScreen({ route, navigation }) {
 
     const childBalloonRuns = await getBalloonRunsForChild(childId);
     setBalloonRuns(childBalloonRuns);
+
+    const childMedia = await getBirthdayMediaForChild(childId);
+    setBirthdayMedia(childMedia);
   }, [childId]);
 
   useFocusEffect(
@@ -318,6 +324,57 @@ export default function ChildProfileScreen({ route, navigation }) {
                   <Text style={styles.chevron}>›</Text>
                 </TouchableOpacity>
               ))
+            )}
+
+            {/* Birthday Media Section */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Birthday Media</Text>
+              {birthdayMedia.length > 0 && (
+                <Text style={styles.sectionCount}>
+                  {birthdayMedia.length} item{birthdayMedia.length !== 1 ? 's' : ''}
+                </Text>
+              )}
+            </View>
+            {birthdayMedia.length === 0 ? (
+              <TouchableOpacity
+                style={styles.emptyMedia}
+                onPress={() => navigation.navigate('BirthdayGallery', { childId: child.id })}
+              >
+                <Text style={{ fontSize: 36 }}>📸</Text>
+                <Text style={styles.emptyMediaText}>
+                  Add birthday photos & videos
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <View>
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.mediaStrip}
+                >
+                  {birthdayMedia.slice(0, 8).map((item) => (
+                    <View key={item.id} style={styles.mediaThumb}>
+                      {item.type === 'photo' ? (
+                        <Image
+                          source={{ uri: item.uri }}
+                          style={styles.mediaThumbImage}
+                          resizeMode="cover"
+                        />
+                      ) : (
+                        <View style={styles.mediaThumbVideo}>
+                          <Text style={styles.mediaThumbPlayIcon}>▶</Text>
+                        </View>
+                      )}
+                    </View>
+                  ))}
+                  <TouchableOpacity
+                    style={styles.mediaSeeAll}
+                    onPress={() => navigation.navigate('BirthdayGallery', { childId: child.id })}
+                  >
+                    <Text style={styles.mediaSeeAllText}>See All ›</Text>
+                  </TouchableOpacity>
+                </ScrollView>
+              </View>
             )}
           </View>
         }
@@ -618,5 +675,60 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
     lineHeight: 20,
+  },
+
+  // Birthday Media
+  emptyMedia: {
+    alignItems: 'center',
+    paddingVertical: 24,
+    paddingHorizontal: SIZES.paddingLg,
+  },
+  emptyMediaText: {
+    fontSize: SIZES.md,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginTop: 8,
+    lineHeight: 20,
+  },
+  mediaStrip: {
+    paddingHorizontal: SIZES.padding,
+    gap: 8,
+    paddingBottom: SIZES.padding,
+  },
+  mediaThumb: {
+    width: 72,
+    height: 72,
+    borderRadius: SIZES.radiusSm,
+    overflow: 'hidden',
+    backgroundColor: COLORS.surfaceAlt,
+  },
+  mediaThumbImage: {
+    width: 72,
+    height: 72,
+  },
+  mediaThumbVideo: {
+    flex: 1,
+    backgroundColor: '#E8F8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaThumbPlayIcon: {
+    fontSize: 20,
+    color: '#4CAF7D',
+  },
+  mediaSeeAll: {
+    width: 72,
+    height: 72,
+    borderRadius: SIZES.radiusSm,
+    backgroundColor: '#E8F8F0',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#7DD3A8',
+  },
+  mediaSeeAllText: {
+    fontSize: SIZES.sm,
+    fontWeight: '700',
+    color: '#4CAF7D',
   },
 });

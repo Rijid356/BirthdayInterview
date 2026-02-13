@@ -14,6 +14,7 @@ import YearCompareScreen from './src/screens/YearCompareScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import BalloonRunCaptureScreen from './src/screens/BalloonRunCaptureScreen';
 import BalloonRunViewScreen from './src/screens/BalloonRunViewScreen';
+import BirthdayGalleryScreen from './src/screens/BirthdayGalleryScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -69,6 +70,11 @@ export default function App() {
           name="BalloonRunView"
           component={BalloonRunViewScreen}
           options={{ title: 'Balloon Run' }}
+        />
+        <Stack.Screen
+          name="BirthdayGallery"
+          component={BirthdayGalleryScreen}
+          options={{ title: 'Birthday Media' }}
         />
         <Stack.Screen
           name="Settings"
