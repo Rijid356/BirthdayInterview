@@ -159,6 +159,49 @@ export async function moveVideoToBalloonStorage(tempUri, filename) {
   return dest;
 }
 
+// ─── Friendly Video Filenames ───
+
+export function getOrdinalSuffix(n) {
+  const num = Math.abs(Math.floor(n));
+  if (num % 100 >= 11 && num % 100 <= 13) return `${num}th`;
+  switch (num % 10) {
+    case 1: return `${num}st`;
+    case 2: return `${num}nd`;
+    case 3: return `${num}rd`;
+    default: return `${num}th`;
+  }
+}
+
+export function getFriendlyVideoFilename(childName, age) {
+  const sanitized = childName.replace(/[<>:"/\\|?*]/g, '');
+  const ordinal = getOrdinalSuffix(age);
+  return `${sanitized}'s ${ordinal} Birthday Interview.mp4`;
+}
+
+const SHARE_TEMP_DIR = FileSystem
+  ? `${FileSystem.cacheDirectory}share-temp/`
+  : '';
+
+export async function copyVideoWithFriendlyName(sourceUri, childName, age) {
+  if (!FileSystem) throw new Error('File system not available on this platform');
+  const info = await FileSystem.getInfoAsync(SHARE_TEMP_DIR);
+  if (!info.exists) await FileSystem.makeDirectoryAsync(SHARE_TEMP_DIR, { intermediates: true });
+  const filename = getFriendlyVideoFilename(childName, age);
+  const dest = `${SHARE_TEMP_DIR}${filename}`;
+  await FileSystem.copyAsync({ from: sourceUri, to: dest });
+  return dest;
+}
+
+export async function cleanupTempShareFiles() {
+  if (!FileSystem) return;
+  try {
+    const info = await FileSystem.getInfoAsync(SHARE_TEMP_DIR);
+    if (info.exists) await FileSystem.deleteAsync(SHARE_TEMP_DIR, { idempotent: true });
+  } catch (e) {
+    // Silent cleanup — not critical
+  }
+}
+
 // ─── Backup ───
 
 export async function exportAllData() {
