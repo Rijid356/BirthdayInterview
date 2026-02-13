@@ -250,42 +250,68 @@ export default function InterviewReviewScreen({ route, navigation }) {
   });
 
   async function handleSaveToLibrary() {
-    if (!MediaLibrary) return;
-    try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Needed', 'Please allow access to save videos to your camera roll.');
+    // Verify the source video still exists on disk
+    if (FileSystem && interview.videoUri) {
+      const fileInfo = await FileSystem.getInfoAsync(interview.videoUri);
+      if (!fileInfo.exists) {
+        Alert.alert('Video Not Found', 'The video file is missing from storage. It may have been deleted.');
         return;
       }
+    }
 
-      // Verify the source video still exists on disk
-      if (FileSystem && interview.videoUri) {
-        const fileInfo = await FileSystem.getInfoAsync(interview.videoUri);
-        if (!fileInfo.exists) {
-          Alert.alert('Video Not Found', 'The video file is missing from storage. It may have been deleted.');
+    let videoUri = interview.videoUri;
+    if (child?.name != null && interview.age != null) {
+      try {
+        videoUri = await copyVideoWithFriendlyName(interview.videoUri, child.name, interview.age);
+      } catch (copyErr) {
+        console.warn('Friendly name copy failed, using original:', copyErr);
+        videoUri = interview.videoUri;
+      }
+    }
+
+    // Try MediaLibrary first (works on iOS), fall back to Sharing on Android
+    // where expo-media-library has a bug inserting videos into MediaStore.Images
+    if (MediaLibrary) {
+      try {
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status === 'granted') {
+          await MediaLibrary.createAssetAsync(videoUri);
+          await cleanupTempShareFiles().catch(() => {});
+          Alert.alert('Saved!', 'Video saved to your camera roll.');
           return;
         }
+      } catch (e) {
+        console.warn('MediaLibrary save failed, falling back to share sheet:', e);
+        // Fall through to Sharing fallback
       }
+    }
 
-      let videoUri = interview.videoUri;
-      if (child?.name != null && interview.age != null) {
-        try {
-          videoUri = await copyVideoWithFriendlyName(interview.videoUri, child.name, interview.age);
-        } catch (copyErr) {
-          // Friendly-name copy failed — fall back to original URI
-          console.warn('Friendly name copy failed, using original:', copyErr);
-          videoUri = interview.videoUri;
+    // Fallback: use share sheet (reliable on all platforms)
+    if (Sharing) {
+      try {
+        const available = await Sharing.isAvailableAsync();
+        if (!available) {
+          Alert.alert('Error', 'Could not save the video. Sharing is not available on this device.');
+          await cleanupTempShareFiles().catch(() => {});
+          return;
         }
+        Alert.alert(
+          'Save Video',
+          'Choose "Save to device" or "Downloads" from the share menu to save this video.',
+          [{ text: 'OK', onPress: async () => {
+            try {
+              await Sharing.shareAsync(videoUri, { mimeType: 'video/mp4', dialogTitle: 'Save Interview Video' });
+            } catch (shareErr) {
+              console.warn('Share error:', shareErr);
+            }
+            await cleanupTempShareFiles().catch(() => {});
+          }}]
+        );
+      } catch (e) {
+        console.warn('Save/share error:', e);
+        await cleanupTempShareFiles().catch(() => {});
+        Alert.alert('Error', `Could not save the video.\n\n${e.message || 'Unknown error'}`);
       }
-      // Use createAssetAsync instead of saveToLibraryAsync — the latter
-      // tries to insert into the images collection on Android which rejects video/mp4.
-      await MediaLibrary.createAssetAsync(videoUri);
-      await cleanupTempShareFiles();
-      Alert.alert('Saved!', 'Video saved to your camera roll.');
-    } catch (e) {
-      console.warn('Save to library error:', e);
-      await cleanupTempShareFiles().catch(() => {});
-      Alert.alert('Error', `Could not save the video.\n\n${e.message || 'Unknown error'}`);
     }
   }
 

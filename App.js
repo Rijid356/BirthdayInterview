@@ -15,6 +15,7 @@ import SettingsScreen from './src/screens/SettingsScreen';
 import BalloonRunCaptureScreen from './src/screens/BalloonRunCaptureScreen';
 import BalloonRunViewScreen from './src/screens/BalloonRunViewScreen';
 import BirthdayGalleryScreen from './src/screens/BirthdayGalleryScreen';
+import YearDetailScreen from './src/screens/YearDetailScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -70,6 +71,11 @@ export default function App() {
           name="BalloonRunView"
           component={BalloonRunViewScreen}
           options={{ title: 'Balloon Run' }}
+        />
+        <Stack.Screen
+          name="YearDetail"
+          component={YearDetailScreen}
+          options={({ route }) => ({ title: String(route.params.year) })}
         />
         <Stack.Screen
           name="BirthdayGallery"

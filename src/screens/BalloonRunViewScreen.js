@@ -78,17 +78,42 @@ export default function BalloonRunViewScreen({ route, navigation }) {
 
   async function handleSaveToCameraRoll() {
     if (!run?.videoUri) return;
+
+    // Try MediaLibrary first (works on iOS), fall back to Sharing on Android
+    if (MediaLibrary) {
+      try {
+        const { status } = await MediaLibrary.requestPermissionsAsync();
+        if (status === 'granted') {
+          await MediaLibrary.createAssetAsync(run.videoUri);
+          Alert.alert('Saved', 'Video saved to your camera roll.');
+          return;
+        }
+      } catch (e) {
+        console.warn('MediaLibrary save failed, falling back to share sheet:', e);
+      }
+    }
+
+    // Fallback: use share sheet
     try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
-      if (status !== 'granted') {
-        Alert.alert('Permission Needed', 'Please grant media library access to save videos.');
+      const available = await Sharing.isAvailableAsync();
+      if (!available) {
+        Alert.alert('Error', 'Could not save the video. Sharing is not available on this device.');
         return;
       }
-      await MediaLibrary.createAssetAsync(run.videoUri);
-      Alert.alert('Saved', 'Video saved to your camera roll.');
+      Alert.alert(
+        'Save Video',
+        'Choose "Save to device" or "Downloads" from the share menu to save this video.',
+        [{ text: 'OK', onPress: async () => {
+          try {
+            await Sharing.shareAsync(run.videoUri, { mimeType: 'video/mp4', dialogTitle: 'Save Video' });
+          } catch (shareErr) {
+            console.warn('Share error:', shareErr);
+          }
+        }}]
+      );
     } catch (e) {
-      console.warn('Save to camera roll error:', e);
-      Alert.alert('Error', 'Could not save video to camera roll.');
+      console.warn('Save video error:', e);
+      Alert.alert('Error', `Could not save the video.\n\n${e.message || 'Unknown error'}`);
     }
   }
 
