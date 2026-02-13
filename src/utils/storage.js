@@ -22,7 +22,16 @@ export async function saveChild(child) {
 }
 
 export async function deleteChild(childId) {
-  const children = await getChildren();
+  // Delete profile photo if exists
+  const allChildren = await getChildren();
+  const targetChild = allChildren.find((c) => c.id === childId);
+  if (targetChild?.photoUri && FileSystem) {
+    try {
+      const photoInfo = await FileSystem.getInfoAsync(targetChild.photoUri);
+      if (photoInfo.exists) await FileSystem.deleteAsync(targetChild.photoUri);
+    } catch (e) { console.warn('Could not delete profile photo:', e); }
+  }
+  const children = allChildren;
   await AsyncStorage.setItem(
     CHILDREN_KEY,
     JSON.stringify(children.filter((c) => c.id !== childId))
@@ -199,6 +208,45 @@ export async function cleanupTempShareFiles() {
     if (info.exists) await FileSystem.deleteAsync(SHARE_TEMP_DIR, { idempotent: true });
   } catch (e) {
     // Silent cleanup — not critical
+  }
+}
+
+// ─── Profile Photos ───
+
+export const PROFILE_PHOTO_DIR = FileSystem
+  ? `${FileSystem.documentDirectory}profile-photos/`
+  : '';
+
+export async function saveProfilePhoto(childId, pickedUri) {
+  if (!FileSystem) throw new Error('File system not available on this platform');
+  const info = await FileSystem.getInfoAsync(PROFILE_PHOTO_DIR);
+  if (!info.exists) await FileSystem.makeDirectoryAsync(PROFILE_PHOTO_DIR, { intermediates: true });
+  const dest = `${PROFILE_PHOTO_DIR}profile_${childId}.jpg`;
+  await FileSystem.copyAsync({ from: pickedUri, to: dest });
+  // Update child record with photoUri
+  const children = await getChildren();
+  const idx = children.findIndex((c) => c.id === childId);
+  if (idx >= 0) {
+    children[idx] = { ...children[idx], photoUri: dest };
+    await AsyncStorage.setItem(CHILDREN_KEY, JSON.stringify(children));
+  }
+  return dest;
+}
+
+export async function deleteProfilePhoto(childId) {
+  if (!FileSystem) return;
+  const dest = `${PROFILE_PHOTO_DIR}profile_${childId}.jpg`;
+  try {
+    const info = await FileSystem.getInfoAsync(dest);
+    if (info.exists) await FileSystem.deleteAsync(dest);
+  } catch (e) { console.warn('Could not delete profile photo:', e); }
+  // Remove photoUri from child record
+  const children = await getChildren();
+  const idx = children.findIndex((c) => c.id === childId);
+  if (idx >= 0) {
+    const { photoUri, ...rest } = children[idx];
+    children[idx] = rest;
+    await AsyncStorage.setItem(CHILDREN_KEY, JSON.stringify(children));
   }
 }
 

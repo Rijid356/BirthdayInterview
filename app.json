@@ -43,7 +43,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow git-bigger to access your photo library to select balloon run videos."
+          "photosPermission": "Allow git-bigger to access your photo library to select photos and videos."
         }
       ]
     ]

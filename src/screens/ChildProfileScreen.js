@@ -2,11 +2,13 @@ import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   TouchableOpacity,
   FlatList,
   Alert,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect } from '@react-navigation/native';
 import { COLORS, SIZES } from '../utils/theme';
 import {
@@ -15,6 +17,8 @@ import {
   deleteInterview,
   getBalloonRunsForChild,
   deleteBalloonRun,
+  saveProfilePhoto,
+  deleteProfilePhoto,
 } from '../utils/storage';
 
 function calculateAge(birthday) {
@@ -64,6 +68,41 @@ export default function ChildProfileScreen({ route, navigation }) {
       loadData();
     }, [loadData])
   );
+
+  const pickPhoto = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ['images'],
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 0.8,
+    });
+    if (!result.canceled && result.assets?.[0]) {
+      await saveProfilePhoto(child.id, result.assets[0].uri);
+      loadData();
+    }
+  };
+
+  const handleAvatarPress = () => {
+    if (child?.photoUri) {
+      Alert.alert('Profile Photo', 'What would you like to do?', [
+        { text: 'Change Photo', onPress: pickPhoto },
+        {
+          text: 'Remove Photo',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteProfilePhoto(child.id);
+            loadData();
+          },
+        },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    } else {
+      Alert.alert('Profile Photo', 'Add a photo for this profile?', [
+        { text: 'Choose Photo', onPress: pickPhoto },
+        { text: 'Cancel', style: 'cancel' },
+      ]);
+    }
+  };
 
   const handleDeleteBalloonRun = (run) => {
     Alert.alert(
@@ -137,9 +176,18 @@ export default function ChildProfileScreen({ route, navigation }) {
     <View>
       {/* Profile Header */}
       <View style={styles.profileHeader}>
-        <View style={styles.emojiContainer}>
-          <Text style={styles.emoji}>{child?.emoji || '🧒'}</Text>
-        </View>
+        <TouchableOpacity onPress={handleAvatarPress} style={styles.avatarTouchable}>
+          <View style={styles.emojiContainer}>
+            {child?.photoUri ? (
+              <Image source={{ uri: child.photoUri }} style={styles.profilePhoto} />
+            ) : (
+              <Text style={styles.emoji}>{child?.emoji || '🧒'}</Text>
+            )}
+          </View>
+          <View style={styles.cameraOverlay}>
+            <Text style={styles.cameraIcon}>📷</Text>
+          </View>
+        </TouchableOpacity>
         <Text style={styles.childName}>{child?.name}</Text>
         <Text style={styles.childAge}>
           {calculateAge(child?.birthday)} years old
@@ -303,6 +351,10 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: SIZES.radiusXl,
     borderBottomRightRadius: SIZES.radiusXl,
   },
+  avatarTouchable: {
+    position: 'relative',
+    marginBottom: 12,
+  },
   emojiContainer: {
     width: 96,
     height: 96,
@@ -315,7 +367,28 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 4,
-    marginBottom: 12,
+    overflow: 'hidden',
+  },
+  profilePhoto: {
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+  },
+  cameraOverlay: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.surface,
+  },
+  cameraIcon: {
+    fontSize: 14,
   },
   emoji: {
     fontSize: 48,

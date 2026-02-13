@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import {
   View,
   Text,
+  Image,
   TextInput,
   TouchableOpacity,
   StyleSheet,
@@ -10,8 +11,9 @@ import {
   Platform,
   Alert,
 } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { COLORS, SIZES } from '../utils/theme';
-import { saveChild } from '../utils/storage';
+import { saveChild, saveProfilePhoto } from '../utils/storage';
 
 const EMOJI_OPTIONS = [
   '👧', '👦', '🧒', '👶', '🧒🏻', '👧🏼', '👦🏽', '🧒🏾', '👧🏿', '🦄',
@@ -50,6 +52,7 @@ export default function AddChildScreen({ navigation }) {
   const [name, setName] = useState('');
   const [birthday, setBirthday] = useState('');
   const [emoji, setEmoji] = useState('🧒');
+  const [photoUri, setPhotoUri] = useState(null);
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
 
@@ -80,6 +83,9 @@ export default function AddChildScreen({ navigation }) {
         createdAt: new Date().toISOString(),
       };
       await saveChild(child);
+      if (photoUri) {
+        await saveProfilePhoto(child.id, photoUri);
+      }
       navigation.goBack();
     } catch (e) {
       Alert.alert('Error', 'Could not save. Please try again.');
@@ -144,6 +150,39 @@ export default function AddChildScreen({ navigation }) {
             </TouchableOpacity>
           ))}
         </View>
+
+        {/* Profile Photo (Optional) */}
+        <Text style={styles.label}>Profile Photo (Optional)</Text>
+        <TouchableOpacity
+          style={styles.photoPickerButton}
+          onPress={async () => {
+            if (photoUri) {
+              setPhotoUri(null);
+            } else {
+              const result = await ImagePicker.launchImageLibraryAsync({
+                mediaTypes: ['images'],
+                allowsEditing: true,
+                aspect: [1, 1],
+                quality: 0.8,
+              });
+              if (!result.canceled && result.assets?.[0]) {
+                setPhotoUri(result.assets[0].uri);
+              }
+            }
+          }}
+        >
+          {photoUri ? (
+            <View style={styles.photoPreviewContainer}>
+              <Image source={{ uri: photoUri }} style={styles.photoPreview} />
+              <Text style={styles.photoRemoveText}>Tap to remove</Text>
+            </View>
+          ) : (
+            <View style={styles.photoPlaceholder}>
+              <Text style={styles.photoPlaceholderIcon}>📷</Text>
+              <Text style={styles.photoPlaceholderText}>Add Photo</Text>
+            </View>
+          )}
+        </TouchableOpacity>
 
         {/* Save Button */}
         <TouchableOpacity
@@ -217,6 +256,42 @@ const styles = StyleSheet.create({
   },
   emojiText: {
     fontSize: 26,
+  },
+  photoPickerButton: {
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  photoPreviewContainer: {
+    alignItems: 'center',
+  },
+  photoPreview: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    marginBottom: 4,
+  },
+  photoRemoveText: {
+    fontSize: SIZES.sm,
+    color: COLORS.textSecondary,
+  },
+  photoPlaceholder: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: COLORS.surfaceAlt,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1.5,
+    borderColor: COLORS.border,
+    borderStyle: 'dashed',
+  },
+  photoPlaceholderIcon: {
+    fontSize: 22,
+  },
+  photoPlaceholderText: {
+    fontSize: SIZES.sm - 2,
+    color: COLORS.textSecondary,
+    marginTop: 2,
   },
   saveButton: {
     backgroundColor: COLORS.primary,
