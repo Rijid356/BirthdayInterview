@@ -207,6 +207,13 @@ export default function YearDetailScreen({ route, navigation }) {
                         })()}
                 </Text>
               </View>
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={() => handleDeleteInterview(interview)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.deleteIcon}>🗑</Text>
+              </TouchableOpacity>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
           ))
@@ -245,6 +252,13 @@ export default function YearDetailScreen({ route, navigation }) {
                 <Text style={styles.cardDate}>{formatInterviewDate(run.createdAt)}</Text>
                 <Text style={styles.cardSub}>{run.playbackRate}x slow-mo</Text>
               </View>
+              <TouchableOpacity
+                style={styles.deleteBtn}
+                onPress={() => handleDeleteBalloonRun(run)}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Text style={styles.deleteIcon}>🗑</Text>
+              </TouchableOpacity>
               <Text style={styles.chevron}>›</Text>
             </TouchableOpacity>
           ))
@@ -439,6 +453,18 @@ const styles = StyleSheet.create({
     fontSize: SIZES.sm,
     color: COLORS.textSecondary,
     marginTop: 2,
+  },
+  deleteBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(239,68,68,0.1)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: 8,
+  },
+  deleteIcon: {
+    fontSize: 14,
   },
   chevron: {
     fontSize: 24,
